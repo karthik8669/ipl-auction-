@@ -442,6 +442,23 @@ export default function ResultsPage({
           >
             ← New Auction
           </button>
+          <button
+            onClick={() => router.push(`/room/${code}/playing11`)}
+            style={{
+              padding: "8px 20px",
+              borderRadius: 8,
+              background: "linear-gradient(135deg,#00c896,#00a078)",
+              border: "none",
+              color: "#111",
+              fontFamily: "Rajdhani, sans-serif",
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(0,200,150,0.3)",
+            }}
+          >
+            🏏 Select My Playing 11
+          </button>
         </div>
       </div>
 

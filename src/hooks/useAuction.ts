@@ -111,7 +111,7 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
           leaderId: user.uid,
           leaderName: myState.name,
           leaderPhoto: myState.photoURL,
-          timerEnd: Date.now() + 8000,
+          timerEnd: Date.now() + 15000,
           bidHistory: [
             {
               userId: user.uid,
@@ -136,7 +136,7 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
       if (nextIndex >= pool.length) {
         await update(ref(realtimeDb, `rooms/${roomCode}`), {
           "meta/status": "finished",
-          "auction/phase": phase,
+          "auction/phase": "finished",
           "auction/timerEnd": 0,
         });
         return true;
@@ -204,7 +204,7 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
     if (!roomCode) return;
     await update(ref(realtimeDb, `rooms/${roomCode}/auction`), {
       phase: "bidding",
-      timerEnd: Date.now() + 8000,
+      timerEnd: Date.now() + 15000,
     });
   }, [roomCode]);
 
