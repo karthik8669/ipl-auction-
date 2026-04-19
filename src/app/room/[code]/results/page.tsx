@@ -12,6 +12,7 @@ import { TradeDrawer } from "@/components/trade/TradeDrawer";
 import { LiveChat } from "@/components/auction/LiveChat";
 import { AuctionStats } from "@/components/results/AuctionStats";
 import { SquadCardGenerator } from "@/components/results/SquadCard";
+import type { RoomState } from "@/types/room";
 
 export default function ResultsPage({
   params,
@@ -23,9 +24,7 @@ export default function ResultsPage({
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
-  const [roomState, setRoomState] = useState<Record<string, unknown> | null>(
-    null,
-  );
+  const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<Record<string, unknown> | null>(
@@ -36,6 +35,14 @@ export default function ResultsPage({
   const [statsTab, setStatsTab] = useState<"analysis" | "overview">("overview");
   const [chatOpen, setChatOpen] = useState(false);
   const [squadCardMode, setSquadCardMode] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   // Auth guard
   useEffect(() => {
@@ -55,7 +62,7 @@ export default function ResultsPage({
           setLoading(false);
           return;
         }
-        const data = snap.val() as Record<string, unknown>;
+        const data = snap.val() as RoomState;
         setRoomState(data);
         setLoading(false);
 
@@ -370,6 +377,11 @@ export default function ResultsPage({
       style={{
         minHeight: "100vh",
         background: "#030c18",
+        fontFamily: "Inter, sans-serif",
+        color: "#ddeeff",
+        overflowX: "hidden",
+        width: "100%",
+        boxSizing: "border-box",
         padding: "0 0 60px",
       }}
     >
@@ -378,21 +390,25 @@ export default function ResultsPage({
         style={{
           background: "rgba(3,12,24,0.95)",
           borderBottom: "1px solid #1a3a5c",
-          padding: "16px 28px",
+          padding: isMobile ? "12px 14px" : "16px 28px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          rowGap: isMobile ? 10 : 0,
           position: "sticky",
           top: 0,
           zIndex: 10,
           backdropFilter: "blur(12px)",
+          width: "100%",
+          boxSizing: "border-box",
         }}
       >
         <div>
           <span
             style={{
               fontFamily: "Teko, sans-serif",
-              fontSize: 36,
+              fontSize: isMobile ? 28 : 36,
               color: "#D4AF37",
               letterSpacing: 4,
             }}
@@ -402,16 +418,24 @@ export default function ResultsPage({
           <span
             style={{
               fontFamily: "Teko, sans-serif",
-              fontSize: 16,
+              fontSize: isMobile ? 12 : 16,
               color: "#5a8ab0",
               marginLeft: 8,
-              letterSpacing: 4,
+              letterSpacing: isMobile ? 2 : 4,
             }}
           >
             AUCTION 2026 — RESULTS
           </span>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            width: isMobile ? "100%" : "auto",
+            justifyContent: isMobile ? "flex-start" : "flex-end",
+          }}
+        >
           <span
             style={{
               padding: "4px 14px",
@@ -422,6 +446,7 @@ export default function ResultsPage({
               fontSize: 12,
               fontWeight: 700,
               letterSpacing: 2,
+              flexShrink: 0,
             }}
           >
             AUCTION COMPLETE
@@ -436,7 +461,7 @@ export default function ResultsPage({
               color: "#5a8ab0",
               fontFamily: "Rajdhani, sans-serif",
               fontWeight: 600,
-              fontSize: 13,
+              fontSize: isMobile ? 12 : 13,
               cursor: "pointer",
             }}
           >
@@ -452,7 +477,7 @@ export default function ResultsPage({
               color: "#111",
               fontFamily: "Rajdhani, sans-serif",
               fontWeight: 700,
-              fontSize: 13,
+              fontSize: isMobile ? 12 : 13,
               cursor: "pointer",
               boxShadow: "0 4px 12px rgba(0,200,150,0.3)",
             }}
@@ -462,7 +487,16 @@ export default function ResultsPage({
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px" }}>
+      <main
+        style={{
+          maxWidth: 900,
+          margin: "0 auto",
+          padding: isMobile ? "16px 14px 80px" : "32px 24px 80px",
+          overflowX: "hidden",
+          width: "100%",
+          boxSizing: "border-box",
+        }}
+      >
         {/* AI Analysis Banner */}
         <div
           style={{
@@ -471,8 +505,12 @@ export default function ResultsPage({
             background:
               "linear-gradient(135deg,rgba(212,175,55,0.08),rgba(0,33,71,0.6))",
             border: "1px solid rgba(212,175,55,0.25)",
-            padding: "24px 28px",
+            padding: isMobile ? "16px 14px" : "20px 24px",
             boxShadow: "0 0 40px rgba(212,175,55,0.06)",
+            width: "100%",
+            boxSizing: "border-box",
+            overflowX: "hidden",
+            wordBreak: "break-word",
           }}
         >
           <div
@@ -563,9 +601,10 @@ export default function ResultsPage({
               <p
                 style={{
                   color: "#ddeeff",
-                  fontSize: 14,
+                  fontSize: isMobile ? "13px" : "15px",
                   lineHeight: 1.7,
                   marginBottom: 12,
+                  wordBreak: "break-word",
                 }}
               >
                 {String(aiAnalysis.winnerReason || "")}
@@ -619,7 +658,7 @@ export default function ResultsPage({
         </div>
 
         {/* Auction Stats */}
-        <AuctionStats roomState={roomState as any} />
+        <AuctionStats roomState={roomState as RoomState} />
 
         {/* Leaderboard */}
         <div
@@ -806,16 +845,26 @@ export default function ResultsPage({
               style={{
                 display: "flex",
                 overflowX: "auto",
+                overflowY: "hidden",
+                gap: 6,
+                padding: "4px 2px 8px",
+                marginBottom: 16,
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+                WebkitOverflowScrolling: "touch",
                 borderBottom: "1px solid #1a3a5c",
                 background: "rgba(3,12,24,0.5)",
               }}
+              className="tabs-scroll"
             >
               {teamsData.map((team) => (
                 <button
                   key={team.uid}
                   onClick={() => { setSelectedTab(team.uid); setSquadCardMode(false); }}
                   style={{
-                    padding: "12px 20px",
+                    flexShrink: 0,
+                    whiteSpace: "nowrap",
+                    padding: isMobile ? "8px 14px" : "10px 18px",
                     border: "none",
                     borderBottom: `2px solid ${
                       team.uid === currentTab ? "#D4AF37" : "transparent"
@@ -824,9 +873,8 @@ export default function ResultsPage({
                     color: team.uid === currentTab ? "#D4AF37" : "#5a8ab0",
                     fontFamily: "Rajdhani, sans-serif",
                     fontWeight: 700,
-                    fontSize: 13,
+                    fontSize: isMobile ? "12px" : "14px",
                     cursor: "pointer",
-                    whiteSpace: "nowrap",
                     letterSpacing: 1,
                     transition: "all 0.15s",
                   }}
@@ -849,11 +897,19 @@ export default function ResultsPage({
               <button
                 onClick={() => setSquadCardMode(true)}
                 style={{
-                  padding: "12px 20px", border: "none",
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
+                  padding: isMobile ? "8px 14px" : "10px 18px",
+                  border: "none",
                   borderBottom: `2px solid ${squadCardMode ? "#D4AF37" : "transparent"}`,
-                  background: "transparent", color: squadCardMode ? "#D4AF37" : "#5a8ab0",
-                  fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: 13,
-                  cursor: "pointer", whiteSpace: "nowrap", letterSpacing: 1, transition: "all 0.15s",
+                  background: "transparent",
+                  color: squadCardMode ? "#D4AF37" : "#5a8ab0",
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  fontSize: isMobile ? "12px" : "14px",
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                  transition: "all 0.15s",
                 }}
               >
                 🎨 Squad Card
@@ -862,11 +918,16 @@ export default function ResultsPage({
 
             <div
               style={{
-                padding: "16px 24px",
+                padding: isMobile ? "14px 12px" : "16px 24px",
                 borderBottom: "1px solid #1a3a5c",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
+                gap: 10,
+                flexWrap: isMobile ? "wrap" : "nowrap",
+                overflowX: "hidden",
+                width: "100%",
+                boxSizing: "border-box",
               }}
             >
               <div>
@@ -920,11 +981,25 @@ export default function ResultsPage({
               </button>
             </div>
 
-            <div style={{ padding: squadCardMode ? "0" : "16px 24px" }}>
+            <div
+              style={{
+                padding: squadCardMode
+                  ? isMobile
+                    ? "16px 12px"
+                    : "20px"
+                  : isMobile
+                    ? "16px 12px"
+                    : "16px 24px",
+                overflowX: "hidden",
+                width: "100%",
+                boxSizing: "border-box",
+              }}
+            >
               {squadCardMode ? (
-                <SquadCardGenerator 
-                  team={selectedTeam as any} 
-                  franchise={(roomState as any)?.franchises?.[selectedTeam.uid] || { name: selectedTeam.name, color: '#D4AF37', logo: '🏏' }} 
+                <SquadCardGenerator
+                  team={selectedTeam}
+                  franchise={roomState?.franchises?.[selectedTeam.uid] || { name: selectedTeam.name, color: '#D4AF37', logo: '🏏' }}
+                  isMobile={isMobile}
                 />
               ) : (
                 <>
@@ -940,13 +1015,16 @@ export default function ResultsPage({
                   (p) => p.role === role,
                 );
                 if (!rolePlayers.length) return null;
-                const roleColors: Record<string, string> = {
+                const roleColors: Record<
+                  "Batsman" | "WK-Batsman" | "All-Rounder" | "Bowler",
+                  string
+                > = {
                   Batsman: "#00c896",
                   "WK-Batsman": "#ff8c00",
                   "All-Rounder": "#b57bee",
                   Bowler: "#ff4060",
                 };
-                const color = (roleColors as any)[role] || "#5a8ab0";
+                const color = roleColors[role] || "#5a8ab0";
                 return (
                   <div key={role} style={{ marginBottom: 20 }}>
                     <div
@@ -1073,14 +1151,14 @@ export default function ResultsPage({
             </div>
           </div>
         )}
-      </div>
+      </main>
 
       <div style={{ textAlign: 'center', padding: '40px 20px', color: '#5a8ab0', fontSize: 13, letterSpacing: 1, fontFamily: 'Rajdhani, sans-serif' }}>
         Designed and Developed by Kartik Jain
       </div>
 
-      <LiveChat code={code} user={user} roomState={roomState as any} isOpen={chatOpen} onToggle={() => setChatOpen(o => !o)} />
-      <TradeDrawer roomState={roomState as any} user={user} code={code} />
+      <LiveChat code={code} user={user} roomState={roomState as RoomState} isOpen={chatOpen} onToggle={() => setChatOpen(o => !o)} />
+      <TradeDrawer roomState={roomState as RoomState} user={user} code={code} />
     </div>
   );
 }

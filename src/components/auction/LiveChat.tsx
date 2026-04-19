@@ -30,10 +30,18 @@ export function LiveChat({
   const [input, setInput] = useState('')
   const [showTaunts, setShowTaunts] = useState(false)
   const [unread, setUnread] = useState(0)
+  const [isMobile, setIsMobile] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const lastReadRef = useRef(0)
 
   const franchise = roomState?.franchises?.[user?.uid]
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     if (!code) return
@@ -108,20 +116,21 @@ export function LiveChat({
         onClick={onToggle}
         style={{
           position: 'fixed',
-          bottom: 140, right: 20,
+          bottom: isMobile ? 70 : 80,
+          right: isMobile ? 12 : 20,
           zIndex: 200,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '10px 18px',
-          borderRadius: 50,
+          padding: isMobile ? '10px 14px' : '12px 20px',
+          borderRadius: isMobile ? 40 : 50,
           border: '1px solid rgba(0,200,150,0.4)',
           background: isOpen
             ? 'rgba(0,200,150,0.15)'
             : 'rgba(7,24,44,0.95)',
           color: '#00c896',
           fontFamily: 'Rajdhani',
-          fontWeight: 700, fontSize: 14,
+          fontWeight: 700, fontSize: isMobile ? 13 : 15,
           cursor: 'pointer',
           backdropFilter: 'blur(12px)',
           boxShadow: '0 4px 20px rgba(0,200,150,0.2)',
@@ -158,8 +167,9 @@ export function LiveChat({
           />
           <div style={{
             position: 'fixed',
-            bottom: 190, right: 20,
-            width: 'min(360px, calc(100vw - 40px))',
+            bottom: isMobile ? 120 : 190,
+            right: isMobile ? 12 : 20,
+            width: isMobile ? 'calc(100vw - 24px)' : 'min(360px, calc(100vw - 40px))',
             height: 420,
             background: 'rgba(7,24,44,0.98)',
             border: '1px solid rgba(0,200,150,0.3)',

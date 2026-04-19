@@ -89,3 +89,23 @@ body {
 * {
   max-width: 100%;
 }
+
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prevent ALL horizontal overflow on mobile */
+@media (max-width: 768px) {
+  * {
+    max-width: 100%;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  canvas {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}

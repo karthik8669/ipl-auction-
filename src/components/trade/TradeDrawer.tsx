@@ -17,6 +17,7 @@ interface TradeDrawerProps {
 export function TradeDrawer({ roomState, user, code }: TradeDrawerProps) {
   const [tradeOpen, setTradeOpen] = useState(false);
   const [tradeTab, setTradeTab] = useState<'browse'|'offers'>('browse');
+  const [isMobile, setIsMobile] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
   const [offerModal, setOfferModal] = useState<{
     player: any,
@@ -105,6 +106,13 @@ export function TradeDrawer({ roomState, user, code }: TradeDrawerProps) {
     .filter((t: any) => t.toUserId === user?.uid && t.status === 'pending')
     .length;
 
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   // 2. Real-Time Toast Notifications for Trades
   const notifiedRef = useRef(new Set<string>());
 
@@ -148,8 +156,8 @@ export function TradeDrawer({ roomState, user, code }: TradeDrawerProps) {
       {/* Floating trade button */}
       <div style={{
         position: 'fixed',
-        bottom: 80,
-        right: 20,
+        bottom: isMobile ? 120 : 140,
+        right: isMobile ? 12 : 20,
         zIndex: 200,
         display: 'flex',
         flexDirection: 'column',
@@ -162,14 +170,14 @@ export function TradeDrawer({ roomState, user, code }: TradeDrawerProps) {
             display: 'flex',
             alignItems: 'center',
             gap: 10,
-            padding: '12px 20px',
-            borderRadius: 50,
+            padding: isMobile ? '10px 14px' : '12px 20px',
+            borderRadius: isMobile ? 40 : 50,
             border: '1px solid rgba(155,89,182,0.5)',
             background: 'rgba(7,24,44,0.95)',
             color: '#b57bee',
             fontFamily: 'Rajdhani, sans-serif',
             fontWeight: 700,
-            fontSize: 15,
+            fontSize: isMobile ? 13 : 15,
             cursor: 'pointer',
             backdropFilter: 'blur(12px)',
             boxShadow: '0 4px 20px rgba(155,89,182,0.25)',

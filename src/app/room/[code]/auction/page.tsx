@@ -1527,7 +1527,8 @@ export default function AuctionPage() {
                     fontFamily: "Rajdhani, sans-serif",
                     fontWeight: 700,
                     fontSize: isMobile ? "13px" : "14px",
-                    cursor: !isHost && iHaveVotedSkip ? "not-allowed" : "pointer",
+                    cursor:
+                      !isHost && iHaveVotedSkip ? "not-allowed" : "pointer",
                     letterSpacing: 1,
                     display: "flex",
                     alignItems: "center",
@@ -2529,9 +2530,10 @@ export default function AuctionPage() {
                           fontFamily: "Rajdhani, sans-serif",
                           fontWeight: 700,
                           fontSize: isMobile ? "13px" : "14px",
-                          cursor: !isHost && iHaveVotedSkip
-                            ? "not-allowed"
-                            : "pointer",
+                          cursor:
+                            !isHost && iHaveVotedSkip
+                              ? "not-allowed"
+                              : "pointer",
                           letterSpacing: 1,
                           display: "flex",
                           alignItems: "center",

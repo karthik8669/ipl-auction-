@@ -5,10 +5,13 @@ import { Player, getEspnId } from '@/data/players'
 import { formatCr } from '@/lib/budgetGuard'
 
 export function SquadCardGenerator({
-  team, franchise
+  team,
+  franchise,
+  isMobile = false,
 }: {
   team: { uid: string, name: string, players: (Player & { soldFor: number })[], budget: number, totalSpent: number, overseas: number },
   franchise: { name: string, color: string, logo: string }
+  isMobile?: boolean
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
@@ -67,46 +70,81 @@ export function SquadCardGenerator({
   }
 
   return (
-    <div style={{ padding: '0 24px 24px' }}>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+    <div
+      style={{
+        padding: isMobile ? '16px 12px' : '20px',
+        overflowX: 'hidden',
+        width: '100%',
+        boxSizing: 'border-box',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: 10,
+          marginBottom: 16,
+          width: '100%',
+        }}
+      >
         <button
           onClick={handleDownload}
           disabled={downloading}
           style={{
-            padding: '10px 24px', borderRadius: 8,
+            flex: 1,
+            padding: isMobile ? '14px' : '12px',
+            borderRadius: 8,
             background: `linear-gradient(135deg, ${franchise.color}, ${franchise.color}cc)`,
             color: '#111', fontFamily: 'Rajdhani', fontWeight: 700,
             border: 'none', cursor: downloading ? 'wait' : 'pointer',
             letterSpacing: 1, boxShadow: `0 4px 16px ${franchise.color}40`,
+            fontSize: isMobile ? '13px' : '14px',
           }}
         >
-          {downloading ? '⏳ GENERATING...' : '⬇️ DOWNLOAD CARD'}
+          {downloading ? '⏳ Generating...' : '📥 Download Card'}
         </button>
         {canShare && (
           <button
             onClick={handleShare}
             disabled={downloading}
             style={{
-              padding: '10px 24px', borderRadius: 8,
+              flex: 1,
+              padding: isMobile ? '14px' : '12px',
+              borderRadius: 8,
               background: 'rgba(255,255,255,0.05)',
               border: `1px solid ${franchise.color}`,
               color: franchise.color, fontFamily: 'Rajdhani', fontWeight: 700,
               cursor: downloading ? 'wait' : 'pointer',
               letterSpacing: 1,
+              fontSize: isMobile ? '13px' : '14px',
             }}
           >
-            📤 SHARE
+            📤 Share Squad
           </button>
         )}
       </div>
 
-      <div style={{ overflowX: 'auto', paddingBottom: 20 }}>
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '100%',
+          borderRadius: 12,
+          border: `1px solid ${franchise.color}30`,
+          display: 'block',
+          marginBottom: 12,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+        }}
+      >
         {/* The actual card that gets captured */}
         <div ref={cardRef} style={{
-          width: 800, padding: 40,
+          width: '100%',
+          maxWidth: isMobile ? '100%' : 800,
+          margin: '0 auto',
+          padding: isMobile ? 14 : 40,
           background: '#030c18',
           position: 'relative',
-          border: `1px solid ${franchise.color}40`,
+          boxSizing: 'border-box',
         }}>
           {/* Background decoration */}
           <div style={{
@@ -117,29 +155,29 @@ export function SquadCardGenerator({
           
           <div style={{ position: 'relative', zIndex: 1 }}>
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30, borderBottom: `2px solid ${franchise.color}40`, paddingBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ fontSize: 64 }}>{franchise.logo}</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 18 : 30, borderBottom: `2px solid ${franchise.color}40`, paddingBottom: isMobile ? 14 : 20, gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16 }}>
+                <div style={{ fontSize: isMobile ? 42 : 64 }}>{franchise.logo}</div>
                 <div>
-                  <div style={{ fontFamily: 'Teko', fontSize: 64, color: franchise.color, lineHeight: 0.9, letterSpacing: 2 }}>{franchise.name}</div>
-                  <div style={{ fontFamily: 'Rajdhani', color: '#ddeeff', fontSize: 18, letterSpacing: 4, textTransform: 'uppercase' }}>Official Final Squad</div>
+                  <div style={{ fontFamily: 'Teko', fontSize: isMobile ? 34 : 64, color: franchise.color, lineHeight: 0.95, letterSpacing: 2 }}>{franchise.name}</div>
+                  <div style={{ fontFamily: 'Rajdhani', color: '#ddeeff', fontSize: isMobile ? 11 : 18, letterSpacing: isMobile ? 1 : 4, textTransform: 'uppercase' }}>Official Final Squad</div>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: 'Teko', fontSize: 36, color: '#D4AF37', lineHeight: 1 }}>IPL 2026</div>
-                <div style={{ color: '#5a8ab0', fontSize: 14 }}>{team.players.length} Players · {team.overseas} Overseas</div>
+                <div style={{ fontFamily: 'Teko', fontSize: isMobile ? 24 : 36, color: '#D4AF37', lineHeight: 1 }}>IPL 2026</div>
+                <div style={{ color: '#5a8ab0', fontSize: isMobile ? 11 : 14 }}>{team.players.length} Players · {team.overseas} Overseas</div>
               </div>
             </div>
 
             {/* Players Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? 8 : 16 }}>
               {team.players.sort((a,b) => b.soldFor - a.soldFor).map((p, i) => {
                 const espnId = getEspnId(p.id);
                 return (
                 <div key={p.id} style={{
                   background: 'rgba(13,34,64,0.6)',
                   border: `1px solid ${i < 3 ? franchise.color : '#1a3a5c'}`,
-                  borderRadius: 12, padding: 12,
+                  borderRadius: 12, padding: isMobile ? 8 : 12,
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
                   textAlign: 'center',
                   position: 'relative',
@@ -147,17 +185,27 @@ export function SquadCardGenerator({
                 }}>
                   {i < 3 && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: franchise.color }}/>}
                   <img src={espnId ? `https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_auto:low/lsci/db/PICTURES/CMS/316500/${espnId}.png` : `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1a3a5c&color=D4AF37`} 
-                       alt="" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', marginBottom: 12, border: `3px solid ${i < 3 ? franchise.color : '#1a3a5c'}` }} crossOrigin="anonymous"/>
-                  <div style={{ fontFamily: 'Rajdhani', fontWeight: 700, fontSize: 16, color: '#ddeeff', lineHeight: 1.1, marginBottom: 4 }}>{p.name} {p.nationality === 'Indian' ? '🇮🇳' : '🌏'}</div>
-                  <div style={{ color: '#5a8ab0', fontSize: 11, marginBottom: 8 }}>{p.role}</div>
-                  <div style={{ fontFamily: 'Teko', fontSize: 24, color: i < 3 ? franchise.color : '#D4AF37', lineHeight: 1 }}>{formatCr(p.soldFor)}</div>
+                       alt="" style={{ width: isMobile ? 58 : 80, height: isMobile ? 58 : 80, borderRadius: '50%', objectFit: 'cover', marginBottom: isMobile ? 8 : 12, border: `3px solid ${i < 3 ? franchise.color : '#1a3a5c'}` }} crossOrigin="anonymous"/>
+                  <div style={{ fontFamily: 'Rajdhani', fontWeight: 700, fontSize: isMobile ? 12 : 16, color: '#ddeeff', lineHeight: 1.15, marginBottom: 4, wordBreak: 'break-word' }}>{p.name} {p.nationality === 'Indian' ? '🇮🇳' : '🌏'}</div>
+                  <div style={{ color: '#5a8ab0', fontSize: isMobile ? 10 : 11, marginBottom: 8 }}>{p.role}</div>
+                  <div style={{ fontFamily: 'Teko', fontSize: isMobile ? 18 : 24, color: i < 3 ? franchise.color : '#D4AF37', lineHeight: 1 }}>{formatCr(p.soldFor)}</div>
                 </div>
               )})}
             </div>
 
             {/* Footer */}
-            <div style={{ marginTop: 30, textAlign: 'center', color: '#5a8ab0', fontSize: 12, fontFamily: 'Rajdhani', letterSpacing: 2 }}>
-              Generated by IPL Auction 2026 Simulator
+            <div
+              style={{
+                marginTop: isMobile ? 14 : 30,
+                fontSize: isMobile ? '12px' : '14px',
+                color: '#5a8ab0',
+                textAlign: 'center',
+                padding: isMobile ? '10px 8px' : '12px 16px',
+                wordBreak: 'break-word',
+                fontFamily: 'Rajdhani',
+              }}
+            >
+              🏏 IPL 2026 · {team.players.length} Players · {team.overseas} Overseas
             </div>
           </div>
         </div>

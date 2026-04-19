@@ -461,7 +461,9 @@ export default function Playing11Page({
               style={{
                 padding: "6px 14px",
                 borderRadius: 20,
-                background: hasWK ? "rgba(0,200,150,0.15)" : "rgba(255,64,96,0.1)",
+                background: hasWK
+                  ? "rgba(0,200,150,0.15)"
+                  : "rgba(255,64,96,0.1)",
                 border: `1px solid ${
                   hasWK ? "rgba(0,200,150,0.3)" : "rgba(255,64,96,0.3)"
                 }`,
@@ -482,9 +484,7 @@ export default function Playing11Page({
                   ? "rgba(255,140,0,0.12)"
                   : "rgba(255,255,255,0.06)",
                 border: `1px solid ${
-                  overseasFull
-                    ? "rgba(255,140,0,0.4)"
-                    : "rgba(255,255,255,0.1)"
+                  overseasFull ? "rgba(255,140,0,0.4)" : "rgba(255,255,255,0.1)"
                 }`,
                 color: overseasFull ? "#ff8c00" : "#ddeeff",
                 fontFamily: "Rajdhani, sans-serif",
