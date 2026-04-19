@@ -30,7 +30,9 @@ export default function Playing11Page({
   params: Promise<{ code: string }>;
 }) {
   const { code: rawCode } = use(params);
-  const code = String(rawCode || "").trim().toUpperCase();
+  const code = String(rawCode || "")
+    .trim()
+    .toUpperCase();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -40,7 +42,9 @@ export default function Playing11Page({
   const [captain, setCaptain] = useState<string>("");
   const [viceCaptain, setViceCaptain] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
+    null,
+  );
 
   useEffect(() => {
     if (authLoading || !user || !code) return;
@@ -206,7 +210,9 @@ export default function Playing11Page({
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20 }}>
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20 }}
+      >
         <div
           style={{
             background: "#07182c",
@@ -215,11 +221,24 @@ export default function Playing11Page({
             border: "1px solid #1a3a5c",
           }}
         >
-          <h2 style={{ color: "#ddeeff", marginTop: 0, marginBottom: 16, fontSize: 18 }}>
+          <h2
+            style={{
+              color: "#ddeeff",
+              marginTop: 0,
+              marginBottom: 16,
+              fontSize: 18,
+            }}
+          >
             Your Squad ({mySquad.length})
           </h2>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: 12,
+            }}
+          >
             {mySquad.map((p) => {
               const isSelected = selected11.includes(p.id);
               return (
@@ -233,19 +252,35 @@ export default function Playing11Page({
                     padding: 12,
                     borderRadius: 10,
                     cursor: "pointer",
-                    background: isSelected ? "rgba(0, 200, 150, 0.1)" : "rgba(255,255,255,0.03)",
+                    background: isSelected
+                      ? "rgba(0, 200, 150, 0.1)"
+                      : "rgba(255,255,255,0.03)",
                     border: `1px solid ${isSelected ? "#00c896" : "#1a3a5c"}`,
                   }}
                 >
                   <img
                     src={`https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_auto:low/lsci/db/PICTURES/CMS/316500/${getEspnId(p.id)}.png`}
                     alt={p.name}
-                    style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover", background: "#111" }}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      background: "#111",
+                    }}
                   />
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: isSelected ? "#00c896" : "#ddeeff", fontWeight: 600 }}>{p.name}</div>
+                    <div
+                      style={{
+                        color: isSelected ? "#00c896" : "#ddeeff",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {p.name}
+                    </div>
                     <div style={{ fontSize: 11, color: "#5a8ab0" }}>
-                      {p.role} · {p.nationality === "Overseas" ? "OS" : "IND"} · {formatCr(p.basePrice)}
+                      {p.role} · {p.nationality === "Overseas" ? "OS" : "IND"} ·{" "}
+                      {formatCr(p.basePrice)}
                     </div>
                   </div>
                 </div>
@@ -263,14 +298,32 @@ export default function Playing11Page({
               border: "1px solid #1a3a5c",
             }}
           >
-            <div style={{ color: selected11.length === 11 ? "#00c896" : "#ff4060", marginBottom: 8 }}>
+            <div
+              style={{
+                color: selected11.length === 11 ? "#00c896" : "#ff4060",
+                marginBottom: 8,
+              }}
+            >
               {selected11.length}/11 Players Selected
             </div>
-            <div style={{ color: hasWK ? "#00c896" : "#ff4060", marginBottom: 12, fontSize: 13 }}>
+            <div
+              style={{
+                color: hasWK ? "#00c896" : "#ff4060",
+                marginBottom: 12,
+                fontSize: 13,
+              }}
+            >
               {hasWK ? "✓ Wicket Keeper Included" : "✗ Need at least 1 WK"}
             </div>
 
-            <label style={{ color: "#5a8ab0", fontSize: 12, display: "block", marginBottom: 6 }}>
+            <label
+              style={{
+                color: "#5a8ab0",
+                fontSize: 12,
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
               Captain
             </label>
             <select
@@ -294,14 +347,29 @@ export default function Playing11Page({
                   if (!p) return null;
                   return (
                     <option key={id} value={id} disabled={id === viceCaptain}>
-                      {p.name} ({p.role === "WK-Batsman" ? "WK" : p.role === "All-Rounder" ? "AR" : p.role === "Batsman" ? "BAT" : "BOWL"})
+                      {p.name} (
+                      {p.role === "WK-Batsman"
+                        ? "WK"
+                        : p.role === "All-Rounder"
+                          ? "AR"
+                          : p.role === "Batsman"
+                            ? "BAT"
+                            : "BOWL"}
+                      )
                     </option>
                   );
                 })
                 .filter(Boolean)}
             </select>
 
-            <label style={{ color: "#5a8ab0", fontSize: 12, display: "block", marginBottom: 6 }}>
+            <label
+              style={{
+                color: "#5a8ab0",
+                fontSize: 12,
+                display: "block",
+                marginBottom: 6,
+              }}
+            >
               Vice Captain
             </label>
             <select
@@ -325,18 +393,40 @@ export default function Playing11Page({
                   if (!p) return null;
                   return (
                     <option key={id} value={id} disabled={id === captain}>
-                      {p.name} ({p.role === "WK-Batsman" ? "WK" : p.role === "All-Rounder" ? "AR" : p.role === "Batsman" ? "BAT" : "BOWL"})
+                      {p.name} (
+                      {p.role === "WK-Batsman"
+                        ? "WK"
+                        : p.role === "All-Rounder"
+                          ? "AR"
+                          : p.role === "Batsman"
+                            ? "BAT"
+                            : "BOWL"}
+                      )
                     </option>
                   );
                 })
                 .filter(Boolean)}
             </select>
 
-            <div style={{ color: captain ? "#00c896" : "#ff4060", marginBottom: 8, fontSize: 13 }}>
+            <div
+              style={{
+                color: captain ? "#00c896" : "#ff4060",
+                marginBottom: 8,
+                fontSize: 13,
+              }}
+            >
               {captain ? `✓ Captain: ${captainName}` : "✗ Select Captain"}
             </div>
-            <div style={{ color: viceCaptain ? "#00c896" : "#ff4060", marginBottom: 16, fontSize: 13 }}>
-              {viceCaptain ? `✓ Vice Captain: ${vcName}` : "✗ Select Vice Captain"}
+            <div
+              style={{
+                color: viceCaptain ? "#00c896" : "#ff4060",
+                marginBottom: 16,
+                fontSize: 13,
+              }}
+            >
+              {viceCaptain
+                ? `✓ Vice Captain: ${vcName}`
+                : "✗ Select Vice Captain"}
             </div>
 
             <button
@@ -347,7 +437,9 @@ export default function Playing11Page({
                 padding: "12px",
                 borderRadius: 8,
                 border: "none",
-                background: isValid ? "linear-gradient(135deg, #D4AF37, #f5d76e)" : "#1a3a5c",
+                background: isValid
+                  ? "linear-gradient(135deg, #D4AF37, #f5d76e)"
+                  : "#1a3a5c",
                 color: isValid ? "#000" : "#5a8ab0",
                 fontWeight: 700,
                 cursor: isValid ? "pointer" : "not-allowed",
@@ -367,8 +459,23 @@ export default function Playing11Page({
                 color: "#ddeeff",
               }}
             >
-              <div style={{ fontSize: 20, marginBottom: 8, fontFamily: "Teko, sans-serif" }}>AI Verdict</div>
-              <div style={{ color: "#D4AF37", fontSize: 22, fontFamily: "Teko, sans-serif", marginBottom: 8 }}>
+              <div
+                style={{
+                  fontSize: 20,
+                  marginBottom: 8,
+                  fontFamily: "Teko, sans-serif",
+                }}
+              >
+                AI Verdict
+              </div>
+              <div
+                style={{
+                  color: "#D4AF37",
+                  fontSize: 22,
+                  fontFamily: "Teko, sans-serif",
+                  marginBottom: 8,
+                }}
+              >
                 Rating: {analysisResult.rating ?? "-"}/10
               </div>
               <div style={{ marginBottom: 8 }}>
