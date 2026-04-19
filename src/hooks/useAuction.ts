@@ -23,6 +23,7 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
     leaderPhoto?: string | null;
     timerEnd?: number;
     bidHistory?: unknown;
+    withdrawals?: unknown;
   };
   const safeUnsoldPlayers = firebaseArrayToArray<string>(currentRoom?.unsoldPlayers);
 
@@ -40,6 +41,10 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
   const bidHistory = useMemo(
     () => firebaseArrayToArray<BidEntry>(safeAuction.bidHistory),
     [safeAuction.bidHistory],
+  );
+  const withdrawals = useMemo(
+    () => (safeAuction.withdrawals as Record<string, boolean> | undefined) || {},
+    [safeAuction.withdrawals],
   );
 
   const currentPlayer = useMemo(() => {
@@ -91,9 +96,11 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
       }
       const overseasBlock =
         currentPlayer.nationality === "Overseas" && myState.overseas >= 8;
+      const hasWithdrawnForPlayer = !!withdrawals[user.uid];
       if (
         phase !== "bidding" ||
         leaderId === user.uid ||
+        hasWithdrawnForPlayer ||
         myState.squadSize >= 20 ||
         overseasBlock ||
         !budgetGuard?.canBid ||
@@ -104,6 +111,8 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
       const auctionRef = ref(realtimeDb, `rooms/${roomCode}/auction`);
       const tx = await runTransaction(auctionRef, (current) => {
         if (!current || current.phase !== "bidding") return current;
+        const txWithdrawals = (current.withdrawals || {}) as Record<string, boolean>;
+        if (txWithdrawals[user.uid]) return current;
         if (amount <= current.currentBid) return;
         return {
           ...current,
@@ -126,11 +135,11 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
       });
       return tx.committed;
     },
-    [budgetGuard?.canBid, currentPlayer, currentRoom, leaderId, myState, phase, roomCode, user],
+    [budgetGuard?.canBid, currentPlayer, currentRoom, leaderId, myState, phase, roomCode, user, withdrawals],
   );
 
   const moveToNext = useCallback(
-    async (phase: "sold" | "unsold") => {
+    async () => {
       if (!roomCode || !currentRoom) return;
       const nextIndex = currentIndex + 1;
       if (nextIndex >= pool.length) {
@@ -149,6 +158,7 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
         leaderName: null,
         leaderPhoto: null,
         bidHistory: [],
+        withdrawals: null,
         timerEnd: Date.now() + 15000,
       });
       return true;
@@ -177,7 +187,7 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
       "auction/phase": "sold",
       "auction/timerEnd": 0,
     });
-    await moveToNext("sold");
+    await moveToNext();
     return true;
   }, [currentBid, currentPlayer, currentRoom, leaderId, moveToNext, roomCode, safeParticipants]);
 
@@ -188,7 +198,7 @@ export function useAuction(currentRoom: RoomState | null, roomCode: string | nul
       "auction/phase": "unsold",
       "auction/timerEnd": 0,
     });
-    await moveToNext("unsold");
+    await moveToNext();
     return true;
   }, [currentPlayer, currentRoom, moveToNext, roomCode, safeUnsoldPlayers]);
 

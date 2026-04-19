@@ -8,36 +8,20 @@ import { useRoom } from "@/hooks/useRoom";
 import { useAuction } from "@/hooks/useAuction";
 import { useTimer } from "@/hooks/useTimer";
 import { players as ALL_PLAYERS, getEspnId } from "@/data/players";
-import { ref, push, update, get, onValue, off } from "firebase/database";
+import { ref, push, update } from "firebase/database";
 import { realtimeDb as db } from "@/lib/firebase";
-import { PlayerImage } from "@/components/shared/PlayerImage";
 import { CircularTimer } from "@/components/auction/CircularTimer";
 import { AudioControls } from "@/components/shared/AudioControls";
 import { audioManager } from "@/lib/audioManager";
 import { toast, Toaster } from "react-hot-toast";
-import { firebaseArrayToArray, cn, toArray } from "@/lib/utils";
-import { getNextBidAmount, formatCr } from "@/lib/budgetGuard";
+import { firebaseArrayToArray } from "@/lib/utils";
+import { formatCr } from "@/lib/budgetGuard";
 import { TradeDrawer } from "@/components/trade/TradeDrawer";
 import { LiveChat } from "@/components/auction/LiveChat";
 import type { BidEntry } from "@/types/room";
 import type { BudgetGuardResult } from "@/lib/budgetGuard";
 import type { ParticipantState } from "@/types/room";
 import type { Player } from "@/data/players";
-
-// ─── Helper: Quick bid options ───
-function getQuickBidOptions(currentBid: number, myBudget: number) {
-  const next = getNextBidAmount(currentBid);
-  const mid = getNextBidAmount(next);
-  const high =
-    currentBid < 2
-      ? Math.round((currentBid + 0.5) * 100) / 100
-      : Math.round((currentBid + 1.0) * 100) / 100;
-  return [
-    { amount: next, label: "Min Raise" },
-    { amount: mid, label: "+1 Step" },
-    { amount: Math.min(high, myBudget), label: "Big Jump" },
-  ].filter((o) => o.amount <= myBudget);
-}
 
 // ─── Helper: Bid block reason ───
 function getBidBlockReason(
@@ -54,6 +38,14 @@ function getBidBlockReason(
   if (player?.nationality === "Overseas" && me.overseas >= 8)
     return "🌏 Overseas Limit (8/8)";
   return "Cannot bid right now";
+}
+
+function getSmartIncrement(bidsPlaced: number): number {
+  if (bidsPlaced < 5) return 0.1;
+  if (bidsPlaced < 10) return 0.2;
+  if (bidsPlaced < 15) return 0.5;
+  if (bidsPlaced < 20) return 1.0;
+  return 2.0;
 }
 
 // --- Player Avatar with Emoji Fallback ---
@@ -125,25 +117,21 @@ export default function AuctionPage() {
   const {
     auction,
     currentPlayer: hookCurrentPlayer,
-    nextBidAmount,
     myState: me,
     budgetGuard,
     placeBid,
     finalizeSold,
     finalizeUnsold,
-    pauseAuction,
-    resumeAuction,
   } = useAuction(currentRoom, roomCode);
   const { seconds } = useTimer(auction?.timerEnd ?? 0);
-  const [windowWidth, setWindowWidth] = useState(1200)
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    setWindowWidth(window.innerWidth)
-    const handleResize = () => setWindowWidth(window.innerWidth)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-  const isMobile = windowWidth < 768
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const prevSec = useRef(-1);
   const prevPhaseRef = useRef<string>("");
@@ -176,19 +164,58 @@ export default function AuctionPage() {
   const leaderId = currentRoom?.auction?.leaderId ?? null;
   const leaderName = auction?.leaderName ?? null;
   const phase = currentRoom?.auction?.phase ?? "waiting";
-  const timerEnd = currentRoom?.auction?.timerEnd ?? null;
   const bidHistory = firebaseArrayToArray<BidEntry>(auction?.bidHistory);
-
+  const rawBidHistory = currentRoom?.auction?.bidHistory as
+    | BidEntry[]
+    | Record<string, BidEntry>
+    | undefined;
+  const bidCount = Array.isArray(rawBidHistory)
+    ? rawBidHistory.length
+    : Object.keys(rawBidHistory || {}).length;
+  const increment = getSmartIncrement(bidCount);
+  const nextBid = Math.round(((currentBid || 0) + increment) * 100) / 100;
+  const withdrawals = (currentRoom?.auction as any)?.withdrawals || {};
+  const hasWithdrawn = !!withdrawals[user?.uid || ""];
+  const withdrawCount = Object.keys(withdrawals).length;
+  const isLeading = leaderId === user?.uid;
+  const canAfford = !!me && me.budget >= nextBid;
+  const overseasFull =
+    !!currentPlayer &&
+    currentPlayer.nationality === "Overseas" &&
+    (me?.overseas ?? 0) >= 8;
+  const squadFull = (me?.squadSize ?? 0) >= 20;
+  const budgetBlocked = !budgetGuard?.canBid || budgetGuard?.status === "blocked";
+  const bidBlockReason = getBidBlockReason(
+    me ?? undefined,
+    currentPlayer,
+    nextBid,
+    budgetGuard
+  );
   const canBid =
     !!me &&
     !!currentPlayer &&
     !!user &&
     phase === "bidding" &&
-    leaderId !== user.uid &&
-    me.squadSize < 20 &&
-    (currentPlayer.nationality !== "Overseas" || me.overseas < 8) &&
-    !!budgetGuard?.canBid &&
-    me.budget >= nextBidAmount;
+    !hasWithdrawn &&
+    !isLeading &&
+    canAfford &&
+    !overseasFull &&
+    !squadFull &&
+    !budgetBlocked;
+  const bidButtonDisabled =
+    !user ||
+    !me ||
+    !currentPlayer ||
+    hasWithdrawn ||
+    isLeading ||
+    !canAfford ||
+    overseasFull ||
+    squadFull ||
+    budgetBlocked ||
+    phase !== "bidding";
+  const displayHistory = isMobile
+    ? bidHistory.slice(0, 3)
+    : bidHistory.slice(0, 8);
 
   const handleLeave = useCallback(async () => {
     await leaveRoom();
@@ -196,37 +223,27 @@ export default function AuctionPage() {
   }, [leaveRoom, router]);
 
   const handlePlaceBid = useCallback(async () => {
+    if (bidButtonDisabled) return;
     await audioManager.resume();
-    const ok = await placeBid(nextBidAmount);
+    const ok = await placeBid(nextBid);
     if (ok) {
       audioManager.playBid();
-      toast.success(`You bid ${nextBidAmount.toFixed(2)} Cr`);
+      toast.success(`You bid ${formatCr(nextBid)}`);
     }
-  }, [placeBid, nextBidAmount]);
+  }, [bidButtonDisabled, nextBid, placeBid]);
 
-  const handleBidAmount = useCallback(
-    async (amount: number) => {
-      await audioManager.resume();
-      const ok = await placeBid(amount);
-      if (ok) {
-        audioManager.playBid();
-        toast.success(`You bid ${formatCr(amount)}`);
-      }
-    },
-    [placeBid]
-  );
+  async function handleWithdraw() {
+    if (!user || hasWithdrawn || isLeading) return;
+    const confirmed = window.confirm(
+      `Withdraw from bidding on ${currentPlayer?.name}?\n\nYou CANNOT bid on this player again!`
+    );
+    if (!confirmed) return;
 
-  const handleSkipOrPass = useCallback(() => {
-    if (isHost) {
-      finalizeUnsold();
-    }
-  }, [isHost, finalizeUnsold]);
-
-  const handleWithdraw = useCallback(() => {
-    toast("You passed on " + (currentPlayer?.name ?? "this player"), {
-      icon: "⏭",
+    const { update: fbUpdate } = await import("firebase/database");
+    await fbUpdate(ref(db), {
+      [`rooms/${code}/auction/withdrawals/${user.uid}`]: true,
     });
-  }, [currentPlayer?.name]);
+  }
 
   // --- Skipping Logic ---
   const skipVotes = (currentRoom?.auction as any)?.skipVotes || {};
@@ -564,11 +581,6 @@ export default function AuctionPage() {
     );
   }
 
-  const quickBidOptions = getQuickBidOptions(
-    currentBid,
-    me?.budget ?? 100
-  );
-
   return (
     <AuthGuard>
       <Toaster />
@@ -650,17 +662,21 @@ export default function AuctionPage() {
 
         {/* ─── MAIN AUCTION AREA ─── */}
         <div style={{
-          flex: 1, overflow: 'hidden',
+          flex: 1,
           display: 'flex', flexDirection: 'column',
-          maxWidth: 760, margin: '0 auto', width: '100%',
-          padding: isMobile ? '8px 10px' : '12px 20px',
-          gap: 10,
+          height: isMobile ? 'calc(100vh - 56px)' : 'auto',
+          overflow: isMobile ? 'hidden' : 'visible',
+          maxWidth: isMobile ? '100%' : '680px',
+          margin: '0 auto',
+          width: '100%',
+          padding: isMobile ? '8px 12px 80px' : '20px 24px',
+          gap: isMobile ? 8 : 12,
         }}>
 
           {/* Player Spotlight */}
           <div style={{
             flexShrink: 0,
-            padding: isMobile ? '10px 12px' : '14px 20px',
+            padding: isMobile ? '12px 16px' : '20px 24px',
             borderRadius: 14,
             border: '1px solid rgba(212,175,55,0.18)',
             background: 'linear-gradient(180deg, rgba(13,34,64,0.8) 0%, transparent 100%)',
@@ -692,12 +708,12 @@ export default function AuctionPage() {
             {/* Player row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <div style={{ flexShrink: 0 }}>
-                <div style={{ width: isMobile ? 72 : 90, height: isMobile ? 72 : 90, borderRadius: '50%', background: 'rgba(212,175,55,0.1)', border: '3px solid #D4AF37', overflow: 'hidden', boxShadow: '0 0 24px rgba(212,175,55,0.35)', animation: 'goldPulse 2s ease-in-out infinite' }}>
-                  <PlayerAvatar player={currentPlayer} size={isMobile ? 72 : 90} />
+                <div style={{ width: isMobile ? 60 : 100, height: isMobile ? 60 : 100, borderRadius: '50%', background: 'rgba(212,175,55,0.1)', border: '3px solid #D4AF37', overflow: 'hidden', boxShadow: '0 0 24px rgba(212,175,55,0.35)', animation: 'goldPulse 2s ease-in-out infinite' }}>
+                  <PlayerAvatar player={currentPlayer} size={isMobile ? 60 : 100} />
                 </div>
               </div>
               <div style={{ flex: 1 }}>
-                <h2 style={{ fontFamily: 'Teko, sans-serif', fontSize: isMobile ? 28 : 42, fontWeight: 700, color: '#ffffff', lineHeight: 1, marginBottom: 4 }}>
+                <h2 style={{ fontFamily: 'Teko, sans-serif', fontSize: isMobile ? 24 : 40, fontWeight: 700, color: '#ffffff', lineHeight: 1, marginBottom: 4 }}>
                   {currentPlayer.name}
                 </h2>
                 <p style={{ color: '#5a8ab0', fontSize: 12, marginBottom: 8, lineHeight: 1.4 }}>{currentPlayer.stats}</p>
@@ -719,10 +735,13 @@ export default function AuctionPage() {
             <div style={{ marginTop: 10, height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
               <div style={{ height: '100%', borderRadius: 2, background: 'linear-gradient(90deg, #D4AF37, #f5d76e)', width: `${((currentIndex + 1) / Math.max(pool.length, 1)) * 100}%`, transition: 'width 0.6s' }} />
             </div>
+            <div style={{ color: '#5a8ab0', fontSize: isMobile ? 11 : 13, marginTop: 6, textAlign: 'right' }}>
+              Player {currentIndex + 1} of {pool.length}
+            </div>
           </div>
 
           {/* Bid Area (scrollable) */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 8 }}>
 
             {/* Current Bid + Timer */}
             <div style={{
@@ -735,60 +754,159 @@ export default function AuctionPage() {
             }}>
               <div>
                 <div style={{ color: '#5a8ab0', fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 2 }}>Current Bid</div>
-                <div style={{ fontFamily: 'Teko, sans-serif', fontSize: isMobile ? 44 : 60, fontWeight: 700, lineHeight: 1, background: 'linear-gradient(135deg, #D4AF37 0%, #f5d76e 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', filter: 'drop-shadow(0 0 20px rgba(212,175,55,0.35))' }}>
+                <div style={{ fontFamily: 'Teko, sans-serif', fontSize: isMobile ? 40 : 64, fontWeight: 700, lineHeight: 1, background: 'linear-gradient(135deg, #D4AF37 0%, #f5d76e 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', filter: 'drop-shadow(0 0 20px rgba(212,175,55,0.35))' }}>
                   {formatCr(currentBid)}
                 </div>
                 {leaderId ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                     <span style={{ fontSize: 12 }}>🏆</span>
                     <img src={participants[leaderId]?.photoURL || ''} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                    <span style={{ fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, color: '#00c896', fontSize: 14 }}>{leaderName || participants[leaderId]?.name || 'Leader'}</span>
+                    <span style={{ fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, color: '#00c896', fontSize: isMobile ? 12 : 15 }}>{leaderName || participants[leaderId]?.name || 'Leader'}</span>
                     {leaderId === user?.uid && <span style={{ background: 'rgba(0,200,150,0.15)', color: '#00c896', fontSize: 9, padding: '1px 6px', borderRadius: 20, fontWeight: 700, letterSpacing: 1 }}>YOU&apos;RE LEADING!</span>}
                   </div>
                 ) : (
                   <div style={{ color: '#5a8ab0', fontSize: 12, marginTop: 4, fontStyle: 'italic' }}>No bids yet — be the first!</div>
                 )}
               </div>
-              <CircularTimer seconds={seconds} total={15} />
+              <CircularTimer
+                seconds={seconds}
+                total={15}
+                size={isMobile ? 70 : 110}
+                numberFontSize={isMobile ? 28 : 44}
+              />
             </div>
 
-            {/* CASE 1: No bids — Bid or Skip */}
-            {!leaderId && phase === 'bidding' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Smart Bid Controls */}
+            <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{
+                textAlign: 'center',
+                padding: '8px',
+                color: '#5a8ab0',
+                fontSize: isMobile ? '12px' : '13px',
+                marginBottom: 8,
+              }}>
+                {bidCount === 0
+                  ? `Base price: ${formatCr(currentPlayer?.basePrice)}`
+                  : `Bid #${bidCount + 1} · Increment: ${increment >= 1 ? `₹${increment}Cr` : `₹${Math.round(increment * 100)}L`}`
+                }
+              </div>
+
+              <button
+                onClick={handlePlaceBid}
+                disabled={bidButtonDisabled}
+                style={{
+                  width: '100%',
+                  padding: isMobile ? '18px' : '20px',
+                  borderRadius: 14,
+                  border: 'none',
+                  backgroundImage: bidButtonDisabled
+                    ? 'none'
+                    : 'linear-gradient(135deg, #D4AF37 0%, #f5d76e 50%, #D4AF37 100%)',
+                  backgroundColor: bidButtonDisabled ? '#1a3a5c' : 'transparent',
+                  color: bidButtonDisabled ? '#5a8ab0' : '#111',
+                  fontFamily: 'Teko, sans-serif',
+                  fontWeight: 700,
+                  fontSize: isMobile ? '22px' : '28px',
+                  letterSpacing: 2,
+                  cursor: bidButtonDisabled ? 'not-allowed' : 'pointer',
+                  boxShadow: bidButtonDisabled
+                    ? 'none'
+                    : '0 6px 28px rgba(212,175,55,0.5)',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 2,
+                }}
+              >
+                <span>
+                  {isLeading
+                    ? '✅ YOU ARE LEADING'
+                    : hasWithdrawn
+                    ? '🚫 WITHDRAWN'
+                    : canBid
+                    ? `🔨 BID ${formatCr(nextBid)}`
+                    : bidBlockReason
+                  }
+                </span>
+                {canBid && !isLeading && (
+                  <span style={{
+                    fontSize: isMobile ? '11px' : '13px',
+                    opacity: 0.7,
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontWeight: 600,
+                    letterSpacing: 1,
+                  }}>
+                    +{increment >= 1
+                      ? `₹${increment}Cr`
+                      : `₹${Math.round(increment * 100)}L`
+                    } from current bid
+                  </span>
+                )}
+              </button>
+
+              {!hasWithdrawn && !isLeading && phase === 'bidding' && (
                 <button
-                  onClick={handlePlaceBid}
-                  disabled={!canBid}
+                  onClick={handleWithdraw}
                   style={{
-                    width: '100%', padding: isMobile ? '16px' : '18px', borderRadius: 12,
-                    border: 'none',
-                    background: canBid ? 'linear-gradient(135deg, #D4AF37, #f5d76e)' : '#1a3a5c',
-                    color: canBid ? '#0a0e00' : '#5a8ab0',
-                    fontFamily: 'Teko, sans-serif', fontSize: isMobile ? 20 : 26,
-                    fontWeight: 700, letterSpacing: 3,
-                    cursor: canBid ? 'pointer' : 'not-allowed',
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,64,96,0.25)',
+                    background: 'rgba(255,64,96,0.06)',
+                    color: '#ff4060',
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontWeight: 700,
+                    fontSize: isMobile ? '13px' : '14px',
+                    cursor: 'pointer',
+                    letterSpacing: 1,
                     transition: 'all 0.15s',
-                    boxShadow: canBid ? '0 4px 28px rgba(212,175,55,0.45)' : 'none',
+                    marginTop: 8,
                   }}
-                  onMouseEnter={e => canBid && (e.currentTarget.style.transform = 'scale(1.02)')}
-                  onMouseLeave={e => (e.currentTarget.style.transform = 'none')}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,64,96,0.12)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,64,96,0.06)'}
                 >
-                  {canBid ? `🔨 PLACE BID — ${formatCr(nextBidAmount)}` : getBidBlockReason(me ?? undefined, currentPlayer, nextBidAmount, budgetGuard)}
+                  🚫 Withdraw — Pass on {currentPlayer?.name}
                 </button>
+              )}
+
+              {hasWithdrawn && (
+                <div style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'rgba(255,255,255,0.03)',
+                  color: '#5a8ab0',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontWeight: 600,
+                  fontSize: isMobile ? '13px' : '14px',
+                  textAlign: 'center',
+                  marginTop: 8,
+                }}>
+                  🚫 You have withdrawn — waiting for next player ({withdrawCount} withdrawn)
+                </div>
+              )}
+
+              {phase === 'bidding' && (
                 <button
                   onClick={isHost ? forceSkip : voteToSkip}
                   disabled={!isHost && iHaveVoted}
                   style={{
-                    width: '100%', padding: '12px', borderRadius: 10,
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 10,
                     border: `1px solid ${iHaveVoted ? 'rgba(255,255,255,0.1)' : 'rgba(255,140,0,0.3)'}`,
                     background: iHaveVoted ? 'rgba(255,255,255,0.04)' : 'rgba(255,140,0,0.08)',
                     color: iHaveVoted ? '#5a8ab0' : '#ff8c00',
                     fontFamily: 'Rajdhani, sans-serif',
-                    fontWeight: 700, fontSize: 14,
+                    fontWeight: 700,
+                    fontSize: isMobile ? 13 : 14,
                     cursor: iHaveVoted ? 'not-allowed' : 'pointer',
                     letterSpacing: 1,
-                    display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', gap: 8,
                     transition: 'all 0.15s',
+                    marginTop: 8,
                   }}
                 >
                   {isHost
@@ -798,47 +916,8 @@ export default function AuctionPage() {
                     : `⏭ Vote Skip (${skipVoteCount}/${totalPlayers})`
                   }
                 </button>
-              </div>
-            )}
-
-            {/* CASE 2: Someone has bid — Raise or Withdraw */}
-            {leaderId && phase === 'bidding' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {canBid && leaderId !== user?.uid && (
-                  <>
-                    <div style={{ color: '#5a8ab0', fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', textAlign: 'center' }}>— Raise Your Bid —</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                      {quickBidOptions.map((option: { amount: number; label: string }, i: number) => (
-                        <button key={i} onClick={() => handleBidAmount(option.amount)} style={{ padding: '12px 6px', borderRadius: 10, border: `1px solid ${i === 0 ? 'rgba(212,175,55,0.5)' : 'rgba(212,175,55,0.25)'}`, background: i === 0 ? 'rgba(212,175,55,0.15)' : 'rgba(212,175,55,0.06)', cursor: 'pointer', transition: 'all 0.15s', textAlign: 'center' }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(212,175,55,0.2)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = i === 0 ? 'rgba(212,175,55,0.15)' : 'rgba(212,175,55,0.06)'; e.currentTarget.style.transform = 'none'; }}
-                        >
-                          <div style={{ color: '#5a8ab0', fontSize: 9, letterSpacing: 1, marginBottom: 2 }}>{option.label}</div>
-                          <div style={{ fontFamily: 'Teko, sans-serif', fontSize: 20, color: i === 0 ? '#D4AF37' : '#ddeeff', lineHeight: 1 }}>{formatCr(option.amount)}</div>
-                          <div style={{ color: '#00c896', fontSize: 9, marginTop: 2 }}>+{formatCr(option.amount - currentBid)}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <button onClick={handleWithdraw} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid rgba(255,64,96,0.25)', background: 'rgba(255,64,96,0.06)', color: '#ff4060', fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: 13, cursor: 'pointer', letterSpacing: 1, transition: 'all 0.15s' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,64,96,0.12)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,64,96,0.06)')}
-                    >✕ Withdraw / Let Them Have It</button>
-                  </>
-                )}
-                {leaderId === user?.uid && (
-                  <div style={{ padding: 16, borderRadius: 12, background: 'rgba(0,200,150,0.08)', border: '2px solid rgba(0,200,150,0.35)', textAlign: 'center' }}>
-                    <div style={{ fontSize: 28, marginBottom: 6 }}>🏆</div>
-                    <div style={{ fontFamily: 'Teko, sans-serif', fontSize: 24, color: '#00c896', lineHeight: 1 }}>YOU&apos;RE WINNING!</div>
-                    <div style={{ color: '#5a8ab0', fontSize: 12, marginTop: 4 }}>Hold on — don&apos;t let anyone outbid you!</div>
-                  </div>
-                )}
-                {!canBid && leaderId !== user?.uid && (
-                  <div style={{ padding: 14, borderRadius: 10, background: 'rgba(255,64,96,0.06)', border: '1px solid rgba(255,64,96,0.2)', textAlign: 'center', color: '#ff4060', fontSize: 13, fontWeight: 600 }}>
-                    {getBidBlockReason(me ?? undefined, currentPlayer, nextBidAmount, budgetGuard)}
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
 
             {/* PAUSED */}
             {phase === 'paused' && (
@@ -849,67 +928,68 @@ export default function AuctionPage() {
               </div>
             )}
 
-            {/* Host Controls */}
-            {isHost && (
-              <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(212,175,55,0.04)', border: '1px solid rgba(212,175,55,0.15)', flexShrink: 0 }}>
-                <div style={{ color: '#D4AF37', fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 8, textAlign: 'center' }}>Host Controls</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  {phase === 'bidding' && (
-                    <button onClick={pauseAuction} style={{ padding: 9, borderRadius: 7, border: '1px solid #1a3a5c', background: 'rgba(255,140,0,0.08)', color: '#ff8c00', fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: 12, cursor: 'pointer', letterSpacing: 1 }}>⏸ Pause</button>
-                  )}
-                  {phase === 'paused' && (
-                    <button onClick={resumeAuction} style={{ padding: 9, borderRadius: 7, border: '1px solid rgba(0,200,150,0.3)', background: 'rgba(0,200,150,0.08)', color: '#00c896', fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: 12, cursor: 'pointer', letterSpacing: 1 }}>▶ Resume</button>
-                  )}
-                  <button onClick={finalizeUnsold} style={{ padding: 9, borderRadius: 7, border: '1px solid #1a3a5c', background: 'transparent', color: '#5a8ab0', fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: 12, cursor: 'pointer', letterSpacing: 1 }}>⏭ Skip</button>
-                  <button onClick={finalizeUnsold} style={{ padding: 9, borderRadius: 7, border: '1px solid rgba(255,64,96,0.25)', background: 'rgba(255,64,96,0.06)', color: '#ff4060', fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: 12, cursor: 'pointer', letterSpacing: 1 }}>🚫 Unsold</button>
-                  {leaderId && (
-                    <button onClick={finalizeSold} style={{ padding: 9, borderRadius: 7, border: '1px solid rgba(0,200,150,0.3)', background: 'rgba(0,200,150,0.1)', color: '#00c896', fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: 12, cursor: 'pointer', letterSpacing: 1, gridColumn: phase === 'paused' ? 'span 1' : 'span 2' }}>✅ Sell Now to {leaderName || 'Winner'}</button>
-                  )}
-                  {isHost && (
-                    <button
-                      onClick={handleEndAuction}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,64,96,0.3)',
-                        background: 'rgba(255,64,96,0.08)',
-                        color: '#ff4060',
-                        fontFamily: 'Rajdhani, sans-serif',
-                        fontWeight: 700, fontSize: 14,
-                        cursor: 'pointer', letterSpacing: 1,
-                        marginTop: 4,
-                        gridColumn: '1 / -1'
-                      }}
-                    >
-                      🏁 End Auction Now
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* Bid History */}
-            <div style={{ borderRadius: 10, background: 'rgba(7,24,44,0.6)', border: '1px solid #1a3a5c', overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{ borderRadius: 10, background: 'rgba(7,24,44,0.6)', border: '1px solid #1a3a5c', overflow: 'hidden', flex: 1, minHeight: 0 }}>
               <div style={{ padding: '8px 14px', borderBottom: '1px solid #1a3a5c', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: 11, color: '#D4AF37', letterSpacing: 3, textTransform: 'uppercase' }}>Bid History</span>
                 <span style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37', padding: '1px 7px', borderRadius: 20, fontSize: 10 }}>{bidHistory.length}</span>
               </div>
-              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+              <div style={{ flex: 1, overflowY: 'auto', maxHeight: isMobile ? '120px' : '200px' }}>
                 {bidHistory.length === 0 ? (
                   <div style={{ padding: 16, textAlign: 'center', color: '#5a8ab0', fontSize: 12, fontStyle: 'italic' }}>Be the first to bid!</div>
                 ) : (
-                  bidHistory.map((bid: BidEntry, i: number) => (
-                    <div key={`${bid.userId}-${bid.time}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderBottom: i < bidHistory.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: i === 0 ? 'rgba(212,175,55,0.06)' : 'transparent', borderLeft: i === 0 ? '3px solid #D4AF37' : '3px solid transparent' }}>
+                  displayHistory.map((bid: BidEntry, i: number) => (
+                    <div key={`${bid.userId}-${bid.time}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '6px 8px' : '8px 12px', borderBottom: i < displayHistory.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: i === 0 ? 'rgba(212,175,55,0.06)' : 'transparent', borderLeft: i === 0 ? '3px solid #D4AF37' : '3px solid transparent' }}>
                       <img src={bid.photoURL || ''} alt="" style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      <span style={{ flex: 1, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: 12, color: i === 0 ? '#ddeeff' : '#5a8ab0' }}>{bid.name}</span>
+                      <span style={{ flex: 1, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: isMobile ? 12 : 14, color: i === 0 ? '#ddeeff' : '#5a8ab0' }}>{bid.name}</span>
                       {i === 0 && <span style={{ fontSize: 8, background: 'rgba(212,175,55,0.2)', color: '#D4AF37', padding: '1px 5px', borderRadius: 20, fontWeight: 700, letterSpacing: 1 }}>HIGHEST</span>}
-                      <span style={{ fontFamily: 'Teko, sans-serif', fontSize: 15, color: i === 0 ? '#D4AF37' : '#5a8ab0', flexShrink: 0 }}>{formatCr(bid.amount)}</span>
+                      <span style={{ fontFamily: 'Teko, sans-serif', fontSize: isMobile ? 16 : 20, color: i === 0 ? '#D4AF37' : '#5a8ab0', flexShrink: 0 }}>{formatCr(bid.amount)}</span>
                     </div>
                   ))
                 )}
               </div>
             </div>
+
+            {isHost && (
+              <div style={{ display: 'flex', gap: 8, padding: isMobile ? '8px 0' : '10px 0', flexShrink: 0 }}>
+                <button
+                  onClick={forceSkip}
+                  style={{
+                    flex: 1,
+                    padding: isMobile ? '8px' : '10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,140,0,0.3)',
+                    background: 'rgba(255,140,0,0.08)',
+                    color: '#ff8c00',
+                    fontFamily: 'Rajdhani,sans-serif',
+                    fontWeight: 700,
+                    fontSize: isMobile ? '12px' : '13px',
+                    cursor: 'pointer',
+                    letterSpacing: 1,
+                  }}
+                >
+                  ⏭ Force Skip
+                </button>
+                <button
+                  onClick={handleEndAuction}
+                  style={{
+                    flex: 1,
+                    padding: isMobile ? '8px' : '10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,64,96,0.25)',
+                    background: 'rgba(255,64,96,0.06)',
+                    color: '#ff4060',
+                    fontFamily: 'Rajdhani,sans-serif',
+                    fontWeight: 700,
+                    fontSize: isMobile ? '12px' : '13px',
+                    cursor: 'pointer',
+                    letterSpacing: 1,
+                  }}
+                >
+                  🏁 End Auction
+                </button>
+              </div>
+            )}
 
           </div>{/* end Bid Area */}
         </div>{/* end MAIN AUCTION AREA */}
@@ -924,7 +1004,7 @@ export default function AuctionPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: Math.min(360, windowWidth - 20), background: '#07182c', borderLeft: '1px solid #1a3a5c', display: 'flex', flexDirection: 'column', animation: 'fadeInRight 0.2s ease-out' }}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(360px, calc(100vw - 20px))', background: '#07182c', borderLeft: '1px solid #1a3a5c', display: 'flex', flexDirection: 'column', animation: 'fadeInRight 0.2s ease-out' }}
           >
             {/* Header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #1a3a5c', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -970,7 +1050,7 @@ export default function AuctionPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: Math.min(400, windowWidth - 20), background: '#07182c', borderLeft: '1px solid #1a3a5c', display: 'flex', flexDirection: 'column', animation: 'fadeInRight 0.2s ease-out' }}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(400px, calc(100vw - 20px))', background: '#07182c', borderLeft: '1px solid #1a3a5c', display: 'flex', flexDirection: 'column', animation: 'fadeInRight 0.2s ease-out' }}
           >
             {/* Header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #1a3a5c', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>

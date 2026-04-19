@@ -3,11 +3,17 @@
 export function CircularTimer({
   seconds,
   total = 15,
+  size = 130,
+  numberFontSize = 36,
 }: {
   seconds: number;
   total?: number;
+  size?: number;
+  numberFontSize?: number;
 }) {
-  const r = 52;
+  const strokeWidth = Math.max(6, Math.round(size * 0.08));
+  const center = size / 2;
+  const r = Math.max(18, center - strokeWidth - 3);
   const circ = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(1, seconds / total));
   const dash = circ * (1 - pct);
@@ -21,25 +27,25 @@ export function CircularTimer({
       className="circular-timer"
     >
       <svg
-        width={130}
-        height={130}
+        width={size}
+        height={size}
         style={{ transform: "rotate(-90deg)", display: "block" }}
       >
         <circle
-          cx={65}
-          cy={65}
+          cx={center}
+          cy={center}
           r={r}
           fill="none"
           stroke="rgba(255,255,255,0.06)"
-          strokeWidth={10}
+          strokeWidth={strokeWidth}
         />
         <circle
-          cx={65}
-          cy={65}
+          cx={center}
+          cy={center}
           r={r}
           fill="none"
           stroke={color}
-          strokeWidth={10}
+          strokeWidth={strokeWidth}
           strokeDasharray={circ}
           strokeDashoffset={dash}
           strokeLinecap="round"
@@ -60,7 +66,7 @@ export function CircularTimer({
         <div
           style={{
             fontFamily: "Teko, sans-serif",
-            fontSize: 36,
+            fontSize: numberFontSize,
             fontWeight: 700,
             color,
             lineHeight: 1,
