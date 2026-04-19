@@ -169,6 +169,8 @@ export default function AuctionPage() {
   const prevSec = useRef(-1);
   const prevPhaseRef = useRef<string>("");
   const prevBidCountRef = useRef(0);
+  const prevBudgetRef = useRef<number>(100);
+  const prevPlayerIdRef = useRef<string | null>(null);
 
   const participants = currentRoom?.participants || {};
   const isHost = (currentRoom?.meta?.hostId || "") === user?.uid;
@@ -219,6 +221,9 @@ export default function AuctionPage() {
   const hasWithdrawn = !!withdrawals[user?.uid || ""];
   const withdrawCount = Object.keys(withdrawals).length;
   const isLeading = leaderId === user?.uid;
+  const myBudget = me?.budget ?? 100;
+  const isLowBudget = myBudget <= 10 && myBudget > 0;
+  const isCriticalBudget = myBudget <= 5 && myBudget > 0;
   const canAfford = !!me && me.budget >= nextBid;
   const overseasFull =
     !!currentPlayer &&
@@ -343,28 +348,49 @@ export default function AuctionPage() {
   const skipVotes = auctionExtras?.skipVotes || {};
   const skipVoteCount = Object.keys(skipVotes).length;
   const totalPlayers = Object.keys(participants || {}).length;
-  const iHaveVoted = !!skipVotes[user?.uid || ""];
-  const skipApproved = skipVoteCount >= totalPlayers && totalPlayers > 0;
+  const iHaveVotedSkip = user?.uid ? !!skipVotes[user.uid] : false;
+  const allVotedSkip = skipVoteCount >= totalPlayers && totalPlayers > 0;
 
   useEffect(() => {
-    if (!isHost || !skipApproved || phase !== "bidding") return;
+    if (!isHost) return;
+    if (!allVotedSkip) return;
+    if (phase !== "bidding") return;
     const doSkip = async () => {
-      await update(ref(db), { [`rooms/${code}/auction/skipVotes`]: null });
+      const { update: fbUpdate } = await import("firebase/database");
+      await fbUpdate(ref(db), { [`rooms/${code}/auction/skipVotes`]: null });
       finalizeUnsold();
     };
     doSkip();
-  }, [skipApproved, isHost, phase, code, finalizeUnsold]);
+  }, [allVotedSkip, isHost, phase, code, finalizeUnsold]);
+
+  useEffect(() => {
+    if (!currentPlayerId) return;
+
+    if (
+      isHost &&
+      prevPlayerIdRef.current &&
+      prevPlayerIdRef.current !== currentPlayerId
+    ) {
+      update(ref(db), {
+        [`rooms/${code}/auction/skipVotes`]: null,
+      });
+    }
+
+    prevPlayerIdRef.current = currentPlayerId;
+  }, [code, currentPlayerId, isHost]);
 
   async function voteToSkip() {
-    if (!user || iHaveVoted) return;
-    await update(ref(db), {
+    if (!user || iHaveVotedSkip || phase !== "bidding") return;
+    const { update: fbUpdate } = await import("firebase/database");
+    await fbUpdate(ref(db), {
       [`rooms/${code}/auction/skipVotes/${user.uid}`]: true,
     });
   }
 
   async function forceSkip() {
-    if (!isHost) return;
-    await update(ref(db), { [`rooms/${code}/auction/skipVotes`]: null });
+    if (!isHost || phase !== "bidding") return;
+    const { update: fbUpdate } = await import("firebase/database");
+    await fbUpdate(ref(db), { [`rooms/${code}/auction/skipVotes`]: null });
     finalizeUnsold();
   }
 
@@ -384,7 +410,8 @@ export default function AuctionPage() {
 
   useEffect(() => {
     if (!isHost || currentRoom?.meta?.status !== "auction") return;
-    const ps: Record<string, ParticipantState> = currentRoom?.participants || {};
+    const ps: Record<string, ParticipantState> =
+      currentRoom?.participants || {};
     const allFull = Object.values(ps).every((p) => (p.squadSize ?? 0) >= 20);
     if (allFull && Object.keys(ps).length > 0) {
       console.log("All squads full — ending auction automatically");
@@ -405,9 +432,12 @@ export default function AuctionPage() {
     if (!confirmed) return;
 
     const updates: Record<string, unknown> = {};
-    const ps: Record<string, ParticipantState> = currentRoom?.participants || {};
-    const teams: Record<string, Record<string, TeamPlayerState>> =
-      currentRoom?.teams || {};
+    const ps: Record<string, ParticipantState> =
+      currentRoom?.participants || {};
+    const teams: Record<
+      string,
+      Record<string, TeamPlayerState>
+    > = currentRoom?.teams || {};
     const soldIds = new Set<string>();
 
     Object.values(teams).forEach((team) => {
@@ -461,17 +491,20 @@ export default function AuctionPage() {
   const [showMyTeam, setShowMyTeam] = useState(false);
   const [showAllTeams, setShowAllTeams] = useState(false);
 
-  const postSystemMessage = useCallback(async (text: string) => {
-    if (!code) return;
-    await push(ref(db, `rooms/${code}/chat`), {
-      userId: "system",
-      name: "System",
-      photoURL: "",
-      text,
-      type: "system",
-      createdAt: Date.now(),
-    });
-  }, [code]);
+  const postSystemMessage = useCallback(
+    async (text: string) => {
+      if (!code) return;
+      await push(ref(db, `rooms/${code}/chat`), {
+        userId: "system",
+        name: "System",
+        photoURL: "",
+        text,
+        type: "system",
+        createdAt: Date.now(),
+      });
+    },
+    [code],
+  );
 
   useEffect(() => {
     if (code) {
@@ -586,6 +619,32 @@ export default function AuctionPage() {
       window.location.replace("/");
     }
   }, [user, authLoading]);
+
+  useEffect(() => {
+    const budget = me?.budget ?? 100;
+
+    if (prevBudgetRef.current > 10 && budget <= 10 && budget > 0) {
+      toast(`⚠️ Low budget! Only ${formatCr(budget)} left!`, {
+        icon: "💰",
+        duration: 5000,
+        style: {
+          background: "#07182c",
+          border: "1px solid rgba(255,140,0,0.4)",
+          color: "#ff8c00",
+          fontFamily: "Rajdhani, sans-serif",
+          fontWeight: 700,
+        },
+      });
+    }
+
+    if (prevBudgetRef.current > 5 && budget <= 5 && budget > 0) {
+      toast.error(`🚨 CRITICAL! Only ${formatCr(budget)} remaining!`, {
+        duration: 6000,
+      });
+    }
+
+    prevBudgetRef.current = budget;
+  }, [me?.budget]);
 
   useEffect(() => {
     if (!isHost || !auction || !roomCode) return;
@@ -805,19 +864,33 @@ export default function AuctionPage() {
                 style={{
                   padding: "4px 10px",
                   borderRadius: 8,
-                  background: "rgba(212,175,55,0.1)",
-                  border: "1px solid rgba(212,175,55,0.3)",
+                  background: isCriticalBudget
+                    ? "rgba(255,64,96,0.15)"
+                    : isLowBudget
+                      ? "rgba(255,140,0,0.12)"
+                      : "rgba(212,175,55,0.1)",
+                  border: `1px solid ${
+                    isCriticalBudget
+                      ? "rgba(255,64,96,0.4)"
+                      : isLowBudget
+                        ? "rgba(255,140,0,0.4)"
+                        : "rgba(212,175,55,0.3)"
+                  }`,
                 }}
               >
                 <div
                   style={{
                     fontFamily: "Teko, sans-serif",
                     fontSize: 15,
-                    color: "#D4AF37",
+                    color: isCriticalBudget
+                      ? "#ff4060"
+                      : isLowBudget
+                        ? "#ff8c00"
+                        : "#D4AF37",
                     lineHeight: 1,
                   }}
                 >
-                  {formatCr(me?.budget ?? 100)}
+                  {formatCr(myBudget)}
                 </div>
               </div>
 
@@ -865,7 +938,9 @@ export default function AuctionPage() {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                height: isShortMobile ? "calc(100vh - 48px)" : "calc(100vh - 52px)",
+                height: isShortMobile
+                  ? "calc(100vh - 48px)"
+                  : "calc(100vh - 52px)",
                 overflow: "hidden",
                 maxWidth: isMobile ? "100%" : "680px",
                 margin: "0 auto",
@@ -888,7 +963,9 @@ export default function AuctionPage() {
                 <div
                   style={{
                     background: rc.gradient,
-                    padding: isShortMobile ? "12px 12px 18px" : "16px 16px 24px",
+                    padding: isShortMobile
+                      ? "12px 12px 18px"
+                      : "16px 16px 24px",
                     position: "relative",
                   }}
                 >
@@ -1178,9 +1255,14 @@ export default function AuctionPage() {
                       }
                       strokeWidth={5}
                       strokeDasharray={mobileTimerCirc}
-                      strokeDashoffset={mobileTimerCirc * (1 - displaySeconds / 15)}
+                      strokeDashoffset={
+                        mobileTimerCirc * (1 - displaySeconds / 15)
+                      }
                       strokeLinecap="round"
-                      style={{ transition: "stroke-dashoffset 0.1s linear, stroke 0.3s" }}
+                      style={{
+                        transition:
+                          "stroke-dashoffset 0.1s linear, stroke 0.3s",
+                      }}
                     />
                   </svg>
                   <div
@@ -1226,6 +1308,60 @@ export default function AuctionPage() {
                 </div>
               </div>
 
+              {isLowBudget && (
+                <div
+                  style={{
+                    padding: isMobile ? "10px 14px" : "12px 16px",
+                    borderRadius: 12,
+                    background: isCriticalBudget
+                      ? "rgba(255,64,96,0.12)"
+                      : "rgba(255,140,0,0.1)",
+                    border: `1px solid ${
+                      isCriticalBudget
+                        ? "rgba(255,64,96,0.4)"
+                        : "rgba(255,140,0,0.4)"
+                    }`,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexShrink: 0,
+                    animation: isCriticalBudget
+                      ? "goldPulse 1s ease-in-out infinite"
+                      : "none",
+                  }}
+                >
+                  <span style={{ fontSize: 20, flexShrink: 0 }}>
+                    {isCriticalBudget ? "🚨" : "⚠️"}
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 700,
+                        fontSize: isMobile ? "13px" : "14px",
+                        color: isCriticalBudget ? "#ff4060" : "#ff8c00",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {isCriticalBudget
+                        ? `🚨 CRITICAL — Only ${formatCr(myBudget)} left!`
+                        : `⚠️ Low Budget — Only ${formatCr(myBudget)} remaining`}
+                    </div>
+                    <div
+                      style={{
+                        color: "#5a8ab0",
+                        fontSize: isMobile ? "11px" : "12px",
+                        marginTop: 2,
+                      }}
+                    >
+                      {isCriticalBudget
+                        ? "Bid very carefully — you need budget for remaining slots!"
+                        : "Be careful with your remaining bids!"}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={handlePlaceBid}
                 disabled={bidButtonDisabled}
@@ -1239,8 +1375,14 @@ export default function AuctionPage() {
                     : isLeading
                       ? "linear-gradient(135deg, #00c896, #00a87a)"
                       : "linear-gradient(135deg, #D4AF37 0%, #f5d76e 50%, #D4AF37 100%)",
-                  backgroundColor: bidButtonDisabled ? "#0d2240" : "transparent",
-                  color: bidButtonDisabled ? "#5a8ab0" : isLeading ? "#fff" : "#111",
+                  backgroundColor: bidButtonDisabled
+                    ? "#0d2240"
+                    : "transparent",
+                  color: bidButtonDisabled
+                    ? "#5a8ab0"
+                    : isLeading
+                      ? "#fff"
+                      : "#111",
                   fontFamily: "Teko, sans-serif",
                   fontWeight: 700,
                   fontSize: isShortMobile ? 24 : 26,
@@ -1304,8 +1446,8 @@ export default function AuctionPage() {
                     +
                     {increment >= 1
                       ? `₹${increment}Cr`
-                      : `₹${Math.round(increment * 100)}L`} increment · Bid #
-                    {bidCount + 1}
+                      : `₹${Math.round(increment * 100)}L`}{" "}
+                    increment · Bid #{bidCount + 1}
                   </span>
                 )}
               </button>
@@ -1360,62 +1502,72 @@ export default function AuctionPage() {
 
                 <button
                   onClick={isHost ? forceSkip : voteToSkip}
-                  disabled={!isHost && iHaveVoted}
+                  disabled={!isHost && iHaveVotedSkip}
                   style={{
-                    padding: isShortMobile ? "10px" : "12px",
+                    width: "100%",
+                    padding: isMobile ? "11px" : "12px",
                     borderRadius: 12,
                     border: `1px solid ${
-                      iHaveVoted ? "rgba(255,255,255,0.08)" : "rgba(255,140,0,0.3)"
+                      iHaveVotedSkip
+                        ? "rgba(255,255,255,0.08)"
+                        : allVotedSkip
+                          ? "rgba(255,64,96,0.4)"
+                          : "rgba(255,140,0,0.3)"
                     }`,
-                    background: iHaveVoted
-                      ? "rgba(255,255,255,0.03)"
-                      : "rgba(255,140,0,0.08)",
-                    color: iHaveVoted ? "#5a8ab0" : "#ff8c00",
+                    background: allVotedSkip
+                      ? "rgba(255,64,96,0.1)"
+                      : iHaveVotedSkip
+                        ? "rgba(255,255,255,0.03)"
+                        : "rgba(255,140,0,0.08)",
+                    color: allVotedSkip
+                      ? "#ff4060"
+                      : iHaveVotedSkip
+                        ? "#5a8ab0"
+                        : "#ff8c00",
                     fontFamily: "Rajdhani, sans-serif",
                     fontWeight: 700,
-                    fontSize: isShortMobile ? 12 : 13,
-                    cursor: iHaveVoted ? "not-allowed" : "pointer",
+                    fontSize: isMobile ? "13px" : "14px",
+                    cursor: !isHost && iHaveVotedSkip ? "not-allowed" : "pointer",
                     letterSpacing: 1,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 6,
+                    gap: 8,
+                    transition: "all 0.15s",
                   }}
                 >
                   {isHost
-                    ? "⏭ Force Skip"
-                    : iHaveVoted
-                      ? `✓ Voted (${skipVoteCount}/${totalPlayers})`
-                      : `⏭ Skip (${skipVoteCount}/${totalPlayers})`}
+                    ? "⏭ Force Skip Player"
+                    : iHaveVotedSkip
+                      ? `✓ You voted skip · ${skipVoteCount}/${totalPlayers} voted`
+                      : allVotedSkip
+                        ? `⏭ Skipping... (${skipVoteCount}/${totalPlayers})`
+                        : `⏭ Vote to Skip · ${skipVoteCount}/${totalPlayers} voted`}
                 </button>
               </div>
+
+              {!isHost && !allVotedSkip && skipVoteCount > 0 && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    color: "#5a8ab0",
+                    fontSize: 11,
+                    marginTop: 4,
+                  }}
+                >
+                  Need all {totalPlayers} players to vote skip
+                </div>
+              )}
 
               {isHost && (
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
+                    gridTemplateColumns: "1fr",
                     gap: 8,
                     flexShrink: 0,
                   }}
                 >
-                  <button
-                    onClick={forceSkip}
-                    style={{
-                      padding: isShortMobile ? "9px" : "10px",
-                      borderRadius: 10,
-                      border: "1px solid rgba(255,140,0,0.3)",
-                      background: "rgba(255,140,0,0.06)",
-                      color: "#ff8c00",
-                      fontFamily: "Rajdhani,sans-serif",
-                      fontWeight: 700,
-                      fontSize: isShortMobile ? 11 : 12,
-                      cursor: "pointer",
-                      letterSpacing: 1,
-                    }}
-                  >
-                    ⏭ Force Skip
-                  </button>
                   <button
                     onClick={handleEndAuction}
                     style={{
@@ -1485,9 +1637,13 @@ export default function AuctionPage() {
                         borderRadius: 10,
                         marginBottom: 4,
                         background:
-                          i === 0 ? "rgba(212,175,55,0.08)" : "rgba(13,34,64,0.4)",
+                          i === 0
+                            ? "rgba(212,175,55,0.08)"
+                            : "rgba(13,34,64,0.4)",
                         border: `1px solid ${
-                          i === 0 ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.04)"
+                          i === 0
+                            ? "rgba(212,175,55,0.2)"
+                            : "rgba(255,255,255,0.04)"
                         }`,
                       }}
                     >
@@ -1513,7 +1669,8 @@ export default function AuctionPage() {
                             fontFamily: "Rajdhani, sans-serif",
                             fontWeight: 700,
                             fontSize: 13,
-                            color: bid.userId === user?.uid ? "#D4AF37" : "#ddeeff",
+                            color:
+                              bid.userId === user?.uid ? "#D4AF37" : "#ddeeff",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
@@ -1555,961 +1712,1063 @@ export default function AuctionPage() {
           </>
         ) : (
           <>
-        {/* ─── NAVBAR ─── */}
-        <nav
-          style={{
-            flexShrink: 0,
-            background: "rgba(3,12,24,0.92)",
-            borderBottom: "1px solid rgba(212,175,55,0.18)",
-            padding: "12px 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-            zIndex: 50,
-            backdropFilter: "blur(14px)",
-          }}
-        >
-          {/* Left — Logo + LIVE */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexShrink: 0,
-            }}
-          >
-            <span
+            {/* ─── NAVBAR ─── */}
+            <nav
               style={{
-                fontFamily: "Teko, sans-serif",
-                fontSize: isMobile ? 22 : 30,
-                color: "#D4AF37",
-                letterSpacing: 3,
-              }}
-            >
-              IPL
-            </span>
-            {!isMobile && (
-              <span
-                style={{
-                  fontFamily: "Teko, sans-serif",
-                  fontSize: 13,
-                  color: "#5a8ab0",
-                  letterSpacing: 2,
-                }}
-              >
-                AUCTION 2026
-              </span>
-            )}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                padding: "3px 8px",
-                borderRadius: 20,
-                background: "rgba(255,64,96,0.12)",
-                border: "1px solid rgba(255,64,96,0.3)",
-              }}
-            >
-              <div
-                style={{
-                  width: 5,
-                  height: 5,
-                  borderRadius: "50%",
-                  background: "#ff4060",
-                  animation: "pulse 1s ease-in-out infinite",
-                }}
-              />
-              <span
-                style={{
-                  color: "#ff4060",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: 2,
-                }}
-              >
-                LIVE
-              </span>
-            </div>
-          </div>
-
-          {/* Center — Progress */}
-          <div style={{ textAlign: "center", flexShrink: 0 }}>
-            <div style={{ color: "#5a8ab0", fontSize: 9, letterSpacing: 1 }}>
-              PLAYER
-            </div>
-            <div
-              style={{
-                fontFamily: "Teko, sans-serif",
-                fontSize: 18,
-                color: "#ddeeff",
-                lineHeight: 1,
-              }}
-            >
-              {currentIndex + 1} / {pool.length}
-            </div>
-          </div>
-
-          {/* Right — Budget + Buttons */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              flexShrink: 0,
-            }}
-          >
-            {/* Budget pill */}
-            <div
-              style={{
-                padding: "4px 10px",
-                borderRadius: 8,
-                background: "rgba(212,175,55,0.1)",
-                border: "1px solid rgba(212,175,55,0.3)",
-                textAlign: "center",
-              }}
-            >
-              <div style={{ color: "#5a8ab0", fontSize: 8, letterSpacing: 1 }}>
-                BUDGET
-              </div>
-              <div
-                style={{
-                  fontFamily: "Teko, sans-serif",
-                  fontSize: 16,
-                  color: "#D4AF37",
-                  lineHeight: 1,
-                }}
-              >
-                {formatCr(me?.budget ?? 100)}
-              </div>
-            </div>
-            {/* My Team */}
-            <button
-              onClick={() => setShowMyTeam(true)}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: "1px solid rgba(212,175,55,0.3)",
-                background: "rgba(212,175,55,0.08)",
-                color: "#D4AF37",
-                fontFamily: "Rajdhani, sans-serif",
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: "pointer",
-                letterSpacing: 1,
-                whiteSpace: "nowrap",
-              }}
-            >
-              👕 My Team
-            </button>
-            {/* All Teams */}
-            <button
-              onClick={() => setShowAllTeams(true)}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: "1px solid #1a3a5c",
-                background: "rgba(255,255,255,0.04)",
-                color: "#5a8ab0",
-                fontFamily: "Rajdhani, sans-serif",
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: "pointer",
-                letterSpacing: 1,
-                whiteSpace: "nowrap",
-              }}
-            >
-              👥 All Teams
-            </button>
-            {/* Leave */}
-            <button
-              onClick={handleLeave}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: "1px solid rgba(255,64,96,0.2)",
-                background: "transparent",
-                color: "#ff4060",
-                fontFamily: "Rajdhani, sans-serif",
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              ← Leave
-            </button>
-          </div>
-        </nav>
-
-        {/* ─── MAIN AUCTION AREA ─── */}
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            height: "calc(100vh - 76px)",
-            overflow: "hidden",
-            maxWidth: "900px",
-            margin: "0 auto",
-            width: "100%",
-            padding: "18px 24px 20px",
-            gap: 14,
-          }}
-        >
-          {/* Player Spotlight */}
-          <div
-            style={{
-              flexShrink: 0,
-              padding: "18px 20px",
-              borderRadius: 20,
-              border: `1px solid ${rc.color}55`,
-              boxShadow: `0 10px 30px ${rc.glow}`,
-              background:
-                `linear-gradient(145deg, ${rc.glow} 0%, rgba(7,24,44,0.92) 46%, rgba(7,24,44,0.85) 100%)`,
-            }}
-          >
-            {/* Role + Nationality badges */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 10,
-              }}
-            >
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "4px 12px",
-                  borderRadius: 20,
-                  background:
-                    currentPlayer.role === "Batsman"
-                      ? "rgba(0,200,150,0.12)"
-                      : currentPlayer.role === "Bowler"
-                        ? "rgba(255,64,96,0.12)"
-                        : currentPlayer.role === "All-Rounder"
-                          ? "rgba(155,89,182,0.15)"
-                          : "rgba(255,140,0,0.12)",
-                  border: `1px solid ${currentPlayer.role === "Batsman" ? "rgba(0,200,150,0.35)" : currentPlayer.role === "Bowler" ? "rgba(255,64,96,0.3)" : currentPlayer.role === "All-Rounder" ? "rgba(155,89,182,0.3)" : "rgba(255,140,0,0.3)"}`,
-                }}
-              >
-                <span style={{ fontSize: 14 }}>
-                  {currentPlayer.role === "Batsman"
-                    ? "🏏"
-                    : currentPlayer.role === "Bowler"
-                      ? "🎯"
-                      : currentPlayer.role === "All-Rounder"
-                        ? "⚡"
-                        : "🧤"}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "Rajdhani, sans-serif",
-                    fontWeight: 700,
-                    fontSize: 11,
-                    letterSpacing: 2,
-                    textTransform: "uppercase",
-                    color:
-                      currentPlayer.role === "Batsman"
-                        ? "#00c896"
-                        : currentPlayer.role === "Bowler"
-                          ? "#ff4060"
-                          : currentPlayer.role === "All-Rounder"
-                            ? "#b57bee"
-                            : "#ff8c00",
-                  }}
-                >
-                  {currentPlayer.role}
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "4px 12px",
-                  borderRadius: 20,
-                  background:
-                    currentPlayer.nationality === "Indian"
-                      ? "rgba(0,136,51,0.12)"
-                      : "rgba(0,123,255,0.12)",
-                  border: `1px solid ${currentPlayer.nationality === "Indian" ? "rgba(0,136,51,0.3)" : "rgba(0,123,255,0.3)"}`,
-                }}
-              >
-                <span style={{ fontSize: 14 }}>
-                  {currentPlayer.nationality === "Indian" ? "🇮🇳" : "🌏"}
-                </span>
-                <span
-                  style={{
-                    color:
-                      currentPlayer.nationality === "Indian"
-                        ? "#00c864"
-                        : "#4da6ff",
-                    fontFamily: "Rajdhani, sans-serif",
-                    fontWeight: 700,
-                    fontSize: 11,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {currentPlayer.nationality === "Indian"
-                    ? "INDIA"
-                    : (currentPlayer.country || "OVERSEAS").toUpperCase()}
-                </span>
-              </div>
-            </div>
-
-            {/* Player row */}
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{ flexShrink: 0 }}>
-                <div
-                  style={{
-                    width: isMobile ? 60 : 100,
-                    height: isMobile ? 60 : 100,
-                    borderRadius: "50%",
-                    background: "rgba(212,175,55,0.1)",
-                    border: "3px solid #D4AF37",
-                    overflow: "hidden",
-                    boxShadow: "0 0 24px rgba(212,175,55,0.35)",
-                    animation: "goldPulse 2s ease-in-out infinite",
-                  }}
-                >
-                  <PlayerAvatar
-                    player={currentPlayer}
-                    size={isMobile ? 60 : 100}
-                  />
-                </div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <h2
-                  style={{
-                    fontFamily: "Teko, sans-serif",
-                    fontSize: isMobile ? 24 : 40,
-                    fontWeight: 700,
-                    color: "#ffffff",
-                    lineHeight: 1,
-                    marginBottom: 4,
-                  }}
-                >
-                  {currentPlayer.name}
-                </h2>
-                <p
-                  style={{
-                    color: "#5a8ab0",
-                    fontSize: 12,
-                    marginBottom: 8,
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {currentPlayer.stats}
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div
-                    style={{
-                      padding: "3px 12px",
-                      borderRadius: 8,
-                      background: "rgba(212,175,55,0.1)",
-                      border: "1px solid rgba(212,175,55,0.3)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "#5a8ab0",
-                        fontSize: 9,
-                        letterSpacing: 2,
-                      }}
-                    >
-                      BASE{" "}
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: "Teko, sans-serif",
-                        fontSize: 18,
-                        color: "#D4AF37",
-                      }}
-                    >
-                      {formatCr(currentPlayer.basePrice)}
-                    </span>
-                  </div>
-                  {currentPlayer.ipl2025Team && (
-                    <div
-                      style={{
-                        padding: "3px 10px",
-                        borderRadius: 8,
-                        background: "rgba(255,255,255,0.05)",
-                        border: "1px solid #1a3a5c",
-                        color: "#5a8ab0",
-                        fontSize: 11,
-                        fontWeight: 600,
-                      }}
-                    >
-                      2025: {currentPlayer.ipl2025Team}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Progress bar */}
-            <div
-              style={{
-                marginTop: 10,
-                height: 3,
-                borderRadius: 2,
-                background: "rgba(255,255,255,0.06)",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  borderRadius: 2,
-                  background: "linear-gradient(90deg, #D4AF37, #f5d76e)",
-                  width: `${((currentIndex + 1) / Math.max(pool.length, 1)) * 100}%`,
-                  transition: "width 0.6s",
-                }}
-              />
-            </div>
-            <div
-              style={{
-                color: "#5a8ab0",
-                fontSize: isMobile ? 11 : 13,
-                marginTop: 6,
-                textAlign: "right",
-              }}
-            >
-              Player {currentIndex + 1} of {pool.length}
-            </div>
-          </div>
-
-          {/* Bid Area (scrollable) */}
-          <div
-            style={{
-              flex: 1,
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            {/* Current Bid + Timer */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "18px 22px",
-                borderRadius: 16,
-                background: "rgba(7,24,44,0.9)",
-                border: `1px solid ${rc.color}45`,
-                boxShadow: `0 6px 24px ${rc.glow}`,
                 flexShrink: 0,
+                background: "rgba(3,12,24,0.92)",
+                borderBottom: "1px solid rgba(212,175,55,0.18)",
+                padding: "12px 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                zIndex: 50,
+                backdropFilter: "blur(14px)",
               }}
             >
-              <div>
-                <div
+              {/* Left — Logo + LIVE */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <span
                   style={{
-                    color: "#5a8ab0",
-                    fontSize: 10,
+                    fontFamily: "Teko, sans-serif",
+                    fontSize: isMobile ? 22 : 30,
+                    color: "#D4AF37",
                     letterSpacing: 3,
-                    textTransform: "uppercase",
-                    marginBottom: 2,
                   }}
                 >
-                  Current Bid
+                  IPL
+                </span>
+                {!isMobile && (
+                  <span
+                    style={{
+                      fontFamily: "Teko, sans-serif",
+                      fontSize: 13,
+                      color: "#5a8ab0",
+                      letterSpacing: 2,
+                    }}
+                  >
+                    AUCTION 2026
+                  </span>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "3px 8px",
+                    borderRadius: 20,
+                    background: "rgba(255,64,96,0.12)",
+                    border: "1px solid rgba(255,64,96,0.3)",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: "50%",
+                      background: "#ff4060",
+                      animation: "pulse 1s ease-in-out infinite",
+                    }}
+                  />
+                  <span
+                    style={{
+                      color: "#ff4060",
+                      fontSize: 9,
+                      fontWeight: 700,
+                      letterSpacing: 2,
+                    }}
+                  >
+                    LIVE
+                  </span>
+                </div>
+              </div>
+
+              {/* Center — Progress */}
+              <div style={{ textAlign: "center", flexShrink: 0 }}>
+                <div
+                  style={{ color: "#5a8ab0", fontSize: 9, letterSpacing: 1 }}
+                >
+                  PLAYER
                 </div>
                 <div
                   style={{
                     fontFamily: "Teko, sans-serif",
-                    fontSize: 60,
-                    fontWeight: 700,
+                    fontSize: 18,
+                    color: "#ddeeff",
                     lineHeight: 1,
-                    background:
-                      "linear-gradient(135deg, #D4AF37 0%, #f5d76e 100%)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                    backgroundClip: "text",
-                    filter: "drop-shadow(0 0 20px rgba(212,175,55,0.35))",
                   }}
                 >
-                  {currentBid > 0
-                    ? formatCr(currentBid)
-                    : formatCr(currentPlayer?.basePrice ?? 0)}
+                  {currentIndex + 1} / {pool.length}
                 </div>
-                {leaderId ? (
+              </div>
+
+              {/* Right — Budget + Buttons */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexShrink: 0,
+                }}
+              >
+                {/* Budget pill */}
+                <div
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    background: isCriticalBudget
+                      ? "rgba(255,64,96,0.15)"
+                      : isLowBudget
+                        ? "rgba(255,140,0,0.12)"
+                        : "rgba(212,175,55,0.1)",
+                    border: `1px solid ${
+                      isCriticalBudget
+                        ? "rgba(255,64,96,0.4)"
+                        : isLowBudget
+                          ? "rgba(255,140,0,0.4)"
+                          : "rgba(212,175,55,0.3)"
+                    }`,
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{ color: "#5a8ab0", fontSize: 8, letterSpacing: 1 }}
+                  >
+                    BUDGET
+                  </div>
                   <div
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      marginTop: 4,
+                      fontFamily: "Teko, sans-serif",
+                      fontSize: 16,
+                      color: isCriticalBudget
+                        ? "#ff4060"
+                        : isLowBudget
+                          ? "#ff8c00"
+                          : "#D4AF37",
+                      lineHeight: 1,
                     }}
                   >
-                    <span style={{ fontSize: 12 }}>🏆</span>
-                    <img
-                      src={participants[leaderId]?.photoURL || ""}
-                      alt=""
-                      style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: "50%",
-                        objectFit: "cover",
-                      }}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
+                    {formatCr(myBudget)}
+                  </div>
+                </div>
+                {/* My Team */}
+                <button
+                  onClick={() => setShowMyTeam(true)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(212,175,55,0.3)",
+                    background: "rgba(212,175,55,0.08)",
+                    color: "#D4AF37",
+                    fontFamily: "Rajdhani, sans-serif",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    letterSpacing: 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  👕 My Team
+                </button>
+                {/* All Teams */}
+                <button
+                  onClick={() => setShowAllTeams(true)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #1a3a5c",
+                    background: "rgba(255,255,255,0.04)",
+                    color: "#5a8ab0",
+                    fontFamily: "Rajdhani, sans-serif",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    letterSpacing: 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  👥 All Teams
+                </button>
+                {/* Leave */}
+                <button
+                  onClick={handleLeave}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,64,96,0.2)",
+                    background: "transparent",
+                    color: "#ff4060",
+                    fontFamily: "Rajdhani, sans-serif",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ← Leave
+                </button>
+              </div>
+            </nav>
+
+            {/* ─── MAIN AUCTION AREA ─── */}
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                height: "calc(100vh - 76px)",
+                overflow: "hidden",
+                maxWidth: "900px",
+                margin: "0 auto",
+                width: "100%",
+                padding: "18px 24px 20px",
+                gap: 14,
+              }}
+            >
+              {/* Player Spotlight */}
+              <div
+                style={{
+                  flexShrink: 0,
+                  padding: "18px 20px",
+                  borderRadius: 20,
+                  border: `1px solid ${rc.color}55`,
+                  boxShadow: `0 10px 30px ${rc.glow}`,
+                  background: `linear-gradient(145deg, ${rc.glow} 0%, rgba(7,24,44,0.92) 46%, rgba(7,24,44,0.85) 100%)`,
+                }}
+              >
+                {/* Role + Nationality badges */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      padding: "4px 12px",
+                      borderRadius: 20,
+                      background:
+                        currentPlayer.role === "Batsman"
+                          ? "rgba(0,200,150,0.12)"
+                          : currentPlayer.role === "Bowler"
+                            ? "rgba(255,64,96,0.12)"
+                            : currentPlayer.role === "All-Rounder"
+                              ? "rgba(155,89,182,0.15)"
+                              : "rgba(255,140,0,0.12)",
+                      border: `1px solid ${currentPlayer.role === "Batsman" ? "rgba(0,200,150,0.35)" : currentPlayer.role === "Bowler" ? "rgba(255,64,96,0.3)" : currentPlayer.role === "All-Rounder" ? "rgba(155,89,182,0.3)" : "rgba(255,140,0,0.3)"}`,
+                    }}
+                  >
+                    <span style={{ fontSize: 14 }}>
+                      {currentPlayer.role === "Batsman"
+                        ? "🏏"
+                        : currentPlayer.role === "Bowler"
+                          ? "🎯"
+                          : currentPlayer.role === "All-Rounder"
+                            ? "⚡"
+                            : "🧤"}
+                    </span>
                     <span
                       style={{
                         fontFamily: "Rajdhani, sans-serif",
                         fontWeight: 700,
-                        color: "#00c896",
-                        fontSize: isMobile ? 12 : 15,
+                        fontSize: 11,
+                        letterSpacing: 2,
+                        textTransform: "uppercase",
+                        color:
+                          currentPlayer.role === "Batsman"
+                            ? "#00c896"
+                            : currentPlayer.role === "Bowler"
+                              ? "#ff4060"
+                              : currentPlayer.role === "All-Rounder"
+                                ? "#b57bee"
+                                : "#ff8c00",
                       }}
                     >
-                      {leaderName || participants[leaderId]?.name || "Leader"}
+                      {currentPlayer.role}
                     </span>
-                    {leaderId === user?.uid && (
-                      <span
+                  </div>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      padding: "4px 12px",
+                      borderRadius: 20,
+                      background:
+                        currentPlayer.nationality === "Indian"
+                          ? "rgba(0,136,51,0.12)"
+                          : "rgba(0,123,255,0.12)",
+                      border: `1px solid ${currentPlayer.nationality === "Indian" ? "rgba(0,136,51,0.3)" : "rgba(0,123,255,0.3)"}`,
+                    }}
+                  >
+                    <span style={{ fontSize: 14 }}>
+                      {currentPlayer.nationality === "Indian" ? "🇮🇳" : "🌏"}
+                    </span>
+                    <span
+                      style={{
+                        color:
+                          currentPlayer.nationality === "Indian"
+                            ? "#00c864"
+                            : "#4da6ff",
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 700,
+                        fontSize: 11,
+                        letterSpacing: 1,
+                      }}
+                    >
+                      {currentPlayer.nationality === "Indian"
+                        ? "INDIA"
+                        : (currentPlayer.country || "OVERSEAS").toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Player row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <div style={{ flexShrink: 0 }}>
+                    <div
+                      style={{
+                        width: isMobile ? 60 : 100,
+                        height: isMobile ? 60 : 100,
+                        borderRadius: "50%",
+                        background: "rgba(212,175,55,0.1)",
+                        border: "3px solid #D4AF37",
+                        overflow: "hidden",
+                        boxShadow: "0 0 24px rgba(212,175,55,0.35)",
+                        animation: "goldPulse 2s ease-in-out infinite",
+                      }}
+                    >
+                      <PlayerAvatar
+                        player={currentPlayer}
+                        size={isMobile ? 60 : 100}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <h2
+                      style={{
+                        fontFamily: "Teko, sans-serif",
+                        fontSize: isMobile ? 24 : 40,
+                        fontWeight: 700,
+                        color: "#ffffff",
+                        lineHeight: 1,
+                        marginBottom: 4,
+                      }}
+                    >
+                      {currentPlayer.name}
+                    </h2>
+                    <p
+                      style={{
+                        color: "#5a8ab0",
+                        fontSize: 12,
+                        marginBottom: 8,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {currentPlayer.stats}
+                    </p>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <div
                         style={{
-                          background: "rgba(0,200,150,0.15)",
-                          color: "#00c896",
-                          fontSize: 9,
-                          padding: "1px 6px",
-                          borderRadius: 20,
-                          fontWeight: 700,
-                          letterSpacing: 1,
+                          padding: "3px 12px",
+                          borderRadius: 8,
+                          background: "rgba(212,175,55,0.1)",
+                          border: "1px solid rgba(212,175,55,0.3)",
                         }}
                       >
-                        YOU&apos;RE LEADING!
-                      </span>
-                    )}
+                        <span
+                          style={{
+                            color: "#5a8ab0",
+                            fontSize: 9,
+                            letterSpacing: 2,
+                          }}
+                        >
+                          BASE{" "}
+                        </span>
+                        <span
+                          style={{
+                            fontFamily: "Teko, sans-serif",
+                            fontSize: 18,
+                            color: "#D4AF37",
+                          }}
+                        >
+                          {formatCr(currentPlayer.basePrice)}
+                        </span>
+                      </div>
+                      {currentPlayer.ipl2025Team && (
+                        <div
+                          style={{
+                            padding: "3px 10px",
+                            borderRadius: 8,
+                            background: "rgba(255,255,255,0.05)",
+                            border: "1px solid #1a3a5c",
+                            color: "#5a8ab0",
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                        >
+                          2025: {currentPlayer.ipl2025Team}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ) : (
+                </div>
+
+                {/* Progress bar */}
+                <div
+                  style={{
+                    marginTop: 10,
+                    height: 3,
+                    borderRadius: 2,
+                    background: "rgba(255,255,255,0.06)",
+                    overflow: "hidden",
+                  }}
+                >
                   <div
                     style={{
-                      color: "#5a8ab0",
-                      fontSize: 12,
-                      marginTop: 4,
-                      fontStyle: "italic",
-                    }}
-                  >
-                    No bids yet — be the first!
-                  </div>
-                )}
-              </div>
-              <CircularTimer
-                seconds={seconds}
-                total={15}
-                size={112}
-                numberFontSize={44}
-              />
-            </div>
-
-            {/* Smart Bid Controls */}
-            <div
-              style={{
-                flexShrink: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "8px",
-                  color: "#5a8ab0",
-                  fontSize: isMobile ? "12px" : "13px",
-                  marginBottom: 8,
-                }}
-              >
-                {bidCount === 0
-                  ? `Base price: ${formatCr(currentPlayer?.basePrice)}`
-                  : `Bid #${bidCount + 1} · Increment: ${increment >= 1 ? `₹${increment}Cr` : `₹${Math.round(increment * 100)}L`}`}
-              </div>
-
-              <button
-                onClick={handlePlaceBid}
-                disabled={bidButtonDisabled}
-                style={{
-                  width: "100%",
-                  padding: "20px",
-                  borderRadius: 14,
-                  border: "none",
-                  backgroundImage: bidButtonDisabled
-                    ? "none"
-                    : isLeading
-                      ? "linear-gradient(135deg, #00c896, #00a87a)"
-                      : "linear-gradient(135deg, #D4AF37 0%, #f5d76e 50%, #D4AF37 100%)",
-                  backgroundColor: bidButtonDisabled
-                    ? "#1a3a5c"
-                    : "transparent",
-                  color: bidButtonDisabled ? "#5a8ab0" : isLeading ? "#fff" : "#111",
-                  fontFamily: "Teko, sans-serif",
-                  fontWeight: 700,
-                  fontSize: "28px",
-                  letterSpacing: 2,
-                  cursor: bidButtonDisabled ? "not-allowed" : "pointer",
-                  boxShadow: bidButtonDisabled
-                    ? "none"
-                    : isLeading
-                      ? "0 6px 24px rgba(0,200,150,0.4)"
-                      : "0 6px 28px rgba(212,175,55,0.5)",
-                  transition: "all 0.2s",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 2,
-                  position: "relative",
-                  overflow: "hidden",
-                }}
-              >
-                {!bidButtonDisabled && !isLeading && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      backgroundImage:
-                        "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%)",
-                      backgroundSize: "200% 100%",
-                      animation: "shimmer 2s linear infinite",
+                      height: "100%",
+                      borderRadius: 2,
+                      background: "linear-gradient(90deg, #D4AF37, #f5d76e)",
+                      width: `${((currentIndex + 1) / Math.max(pool.length, 1)) * 100}%`,
+                      transition: "width 0.6s",
                     }}
                   />
-                )}
-                <span style={{ position: "relative", zIndex: 1 }}>
-                  {isLeading
-                    ? "✅ YOU ARE LEADING"
-                    : hasWithdrawn
-                      ? "🚫 WITHDRAWN"
-                      : canBid
-                        ? `🔨 BID ${formatCr(nextBid)}`
-                        : bidBlockReason}
-                </span>
-                {canBid && !isLeading && (
-                  <span
-                    style={{
-                      position: "relative",
-                      zIndex: 1,
-                      fontSize: "13px",
-                      opacity: 0.7,
-                      fontFamily: "Rajdhani, sans-serif",
-                      fontWeight: 600,
-                      letterSpacing: 1,
-                    }}
-                  >
-                    +
-                    {increment >= 1
-                      ? `₹${increment}Cr`
-                      : `₹${Math.round(increment * 100)}L`}{" "}
-                    from current bid
-                  </span>
-                )}
-              </button>
-
-              {!hasWithdrawn && !isLeading && phase === "bidding" && (
-                <button
-                  onClick={handleWithdraw}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,64,96,0.25)",
-                    background: "rgba(255,64,96,0.06)",
-                    color: "#ff4060",
-                    fontFamily: "Rajdhani, sans-serif",
-                    fontWeight: 700,
-                    fontSize: isMobile ? "13px" : "14px",
-                    cursor: "pointer",
-                    letterSpacing: 1,
-                    transition: "all 0.15s",
-                    marginTop: 8,
-                  }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "rgba(255,64,96,0.12)")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = "rgba(255,64,96,0.06)")
-                  }
-                >
-                  🚫 Withdraw — Pass on {currentPlayer?.name}
-                </button>
-              )}
-
-              {hasWithdrawn && (
+                </div>
                 <div
                   style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    background: "rgba(255,255,255,0.03)",
                     color: "#5a8ab0",
-                    fontFamily: "Rajdhani, sans-serif",
-                    fontWeight: 600,
-                    fontSize: isMobile ? "13px" : "14px",
-                    textAlign: "center",
-                    marginTop: 8,
+                    fontSize: isMobile ? 11 : 13,
+                    marginTop: 6,
+                    textAlign: "right",
                   }}
                 >
-                  🚫 You have withdrawn — waiting for next player (
-                  {withdrawCount} withdrawn)
-                </div>
-              )}
-
-              {phase === "bidding" && (
-                <button
-                  onClick={isHost ? forceSkip : voteToSkip}
-                  disabled={!isHost && iHaveVoted}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 10,
-                    border: `1px solid ${iHaveVoted ? "rgba(255,255,255,0.1)" : "rgba(255,140,0,0.3)"}`,
-                    background: iHaveVoted
-                      ? "rgba(255,255,255,0.04)"
-                      : "rgba(255,140,0,0.08)",
-                    color: iHaveVoted ? "#5a8ab0" : "#ff8c00",
-                    fontFamily: "Rajdhani, sans-serif",
-                    fontWeight: 700,
-                    fontSize: isMobile ? 13 : 14,
-                    cursor: iHaveVoted ? "not-allowed" : "pointer",
-                    letterSpacing: 1,
-                    transition: "all 0.15s",
-                    marginTop: 8,
-                  }}
-                >
-                  {isHost
-                    ? "⏭ Force Skip"
-                    : iHaveVoted
-                      ? `✓ Voted (${skipVoteCount}/${totalPlayers} — need all)`
-                      : `⏭ Vote Skip (${skipVoteCount}/${totalPlayers})`}
-                </button>
-              )}
-            </div>
-
-            {/* PAUSED */}
-            {phase === "paused" && (
-              <div
-                style={{
-                  padding: 20,
-                  borderRadius: 12,
-                  background: "rgba(255,140,0,0.08)",
-                  border: "1px solid rgba(255,140,0,0.3)",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ fontSize: 36, marginBottom: 6 }}>⏸️</div>
-                <div
-                  style={{
-                    fontFamily: "Teko, sans-serif",
-                    fontSize: 24,
-                    color: "#ff8c00",
-                  }}
-                >
-                  AUCTION PAUSED
-                </div>
-                <div style={{ color: "#5a8ab0", fontSize: 12, marginTop: 4 }}>
-                  Waiting for host to resume...
+                  Player {currentIndex + 1} of {pool.length}
                 </div>
               </div>
-            )}
 
-            {/* Bid History */}
-            <div
-              style={{
-                borderRadius: 10,
-                background: "rgba(7,24,44,0.6)",
-                border: "1px solid #1a3a5c",
-                overflow: "hidden",
-                flex: 1,
-                minHeight: 0,
-              }}
-            >
-              <div
-                style={{
-                  padding: "8px 14px",
-                  borderBottom: "1px solid #1a3a5c",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "Rajdhani, sans-serif",
-                    fontWeight: 700,
-                    fontSize: 11,
-                    color: "#D4AF37",
-                    letterSpacing: 3,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Bid History
-                </span>
-                <span
-                  style={{
-                    background: "rgba(212,175,55,0.15)",
-                    color: "#D4AF37",
-                    padding: "1px 7px",
-                    borderRadius: 20,
-                    fontSize: 10,
-                  }}
-                >
-                  {bidHistory.length}
-                </span>
-              </div>
+              {/* Bid Area (scrollable) */}
               <div
                 style={{
                   flex: 1,
-                  overflowY: "auto",
-                  maxHeight: isMobile ? "120px" : "200px",
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
                 }}
               >
-                {bidHistory.length === 0 ? (
-                  <div
-                    style={{
-                      padding: 16,
-                      textAlign: "center",
-                      color: "#5a8ab0",
-                      fontSize: 12,
-                      fontStyle: "italic",
-                    }}
-                  >
-                    Be the first to bid!
-                  </div>
-                ) : (
-                  displayHistory.map((bid: BidEntry, i: number) => (
+                {/* Current Bid + Timer */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "18px 22px",
+                    borderRadius: 16,
+                    background: "rgba(7,24,44,0.9)",
+                    border: `1px solid ${rc.color}45`,
+                    boxShadow: `0 6px 24px ${rc.glow}`,
+                    flexShrink: 0,
+                  }}
+                >
+                  <div>
                     <div
-                      key={`${bid.userId}-${bid.time}`}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: isMobile ? "6px 8px" : "8px 12px",
-                        borderBottom:
-                          i < displayHistory.length - 1
-                            ? "1px solid rgba(255,255,255,0.04)"
-                            : "none",
-                        background:
-                          i === 0 ? "rgba(212,175,55,0.06)" : "transparent",
-                        borderLeft:
-                          i === 0
-                            ? "3px solid #D4AF37"
-                            : "3px solid transparent",
+                        color: "#5a8ab0",
+                        fontSize: 10,
+                        letterSpacing: 3,
+                        textTransform: "uppercase",
+                        marginBottom: 2,
                       }}
                     >
-                      <img
-                        src={bid.photoURL || ""}
-                        alt=""
+                      Current Bid
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "Teko, sans-serif",
+                        fontSize: 60,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        background:
+                          "linear-gradient(135deg, #D4AF37 0%, #f5d76e 100%)",
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                        backgroundClip: "text",
+                        filter: "drop-shadow(0 0 20px rgba(212,175,55,0.35))",
+                      }}
+                    >
+                      {currentBid > 0
+                        ? formatCr(currentBid)
+                        : formatCr(currentPlayer?.basePrice ?? 0)}
+                    </div>
+                    {leaderId ? (
+                      <div
                         style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: "50%",
-                          objectFit: "cover",
-                          flexShrink: 0,
-                        }}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                      <span
-                        style={{
-                          flex: 1,
-                          fontFamily: "Rajdhani, sans-serif",
-                          fontWeight: 600,
-                          fontSize: isMobile ? 12 : 14,
-                          color: i === 0 ? "#ddeeff" : "#5a8ab0",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          marginTop: 4,
                         }}
                       >
-                        {bid.name}
-                      </span>
-                      {i === 0 && (
+                        <span style={{ fontSize: 12 }}>🏆</span>
+                        <img
+                          src={participants[leaderId]?.photoURL || ""}
+                          alt=""
+                          style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: "50%",
+                            objectFit: "cover",
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              "none";
+                          }}
+                        />
                         <span
                           style={{
-                            fontSize: 8,
-                            background: "rgba(212,175,55,0.2)",
-                            color: "#D4AF37",
-                            padding: "1px 5px",
-                            borderRadius: 20,
+                            fontFamily: "Rajdhani, sans-serif",
                             fontWeight: 700,
-                            letterSpacing: 1,
+                            color: "#00c896",
+                            fontSize: isMobile ? 12 : 15,
                           }}
                         >
-                          HIGHEST
+                          {leaderName ||
+                            participants[leaderId]?.name ||
+                            "Leader"}
                         </span>
-                      )}
-                      <span
+                        {leaderId === user?.uid && (
+                          <span
+                            style={{
+                              background: "rgba(0,200,150,0.15)",
+                              color: "#00c896",
+                              fontSize: 9,
+                              padding: "1px 6px",
+                              borderRadius: 20,
+                              fontWeight: 700,
+                              letterSpacing: 1,
+                            }}
+                          >
+                            YOU&apos;RE LEADING!
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div
                         style={{
-                          fontFamily: "Teko, sans-serif",
-                          fontSize: isMobile ? 16 : 20,
-                          color: i === 0 ? "#D4AF37" : "#5a8ab0",
-                          flexShrink: 0,
+                          color: "#5a8ab0",
+                          fontSize: 12,
+                          marginTop: 4,
+                          fontStyle: "italic",
                         }}
                       >
-                        {formatCr(bid.amount)}
+                        No bids yet — be the first!
+                      </div>
+                    )}
+                  </div>
+                  <CircularTimer
+                    seconds={seconds}
+                    total={15}
+                    size={112}
+                    numberFontSize={44}
+                  />
+                </div>
+
+                {/* Smart Bid Controls */}
+                <div
+                  style={{
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "8px",
+                      color: "#5a8ab0",
+                      fontSize: isMobile ? "12px" : "13px",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {bidCount === 0
+                      ? `Base price: ${formatCr(currentPlayer?.basePrice)}`
+                      : `Bid #${bidCount + 1} · Increment: ${increment >= 1 ? `₹${increment}Cr` : `₹${Math.round(increment * 100)}L`}`}
+                  </div>
+
+                  {isLowBudget && (
+                    <div
+                      style={{
+                        padding: isMobile ? "10px 14px" : "12px 16px",
+                        borderRadius: 12,
+                        background: isCriticalBudget
+                          ? "rgba(255,64,96,0.12)"
+                          : "rgba(255,140,0,0.1)",
+                        border: `1px solid ${
+                          isCriticalBudget
+                            ? "rgba(255,64,96,0.4)"
+                            : "rgba(255,140,0,0.4)"
+                        }`,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexShrink: 0,
+                        animation: isCriticalBudget
+                          ? "goldPulse 1s ease-in-out infinite"
+                          : "none",
+                      }}
+                    >
+                      <span style={{ fontSize: 20, flexShrink: 0 }}>
+                        {isCriticalBudget ? "🚨" : "⚠️"}
                       </span>
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontFamily: "Rajdhani, sans-serif",
+                            fontWeight: 700,
+                            fontSize: isMobile ? "13px" : "14px",
+                            color: isCriticalBudget ? "#ff4060" : "#ff8c00",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          {isCriticalBudget
+                            ? `🚨 CRITICAL — Only ${formatCr(myBudget)} left!`
+                            : `⚠️ Low Budget — Only ${formatCr(myBudget)} remaining`}
+                        </div>
+                        <div
+                          style={{
+                            color: "#5a8ab0",
+                            fontSize: isMobile ? "11px" : "12px",
+                            marginTop: 2,
+                          }}
+                        >
+                          {isCriticalBudget
+                            ? "Bid very carefully — you need budget for remaining slots!"
+                            : "Be careful with your remaining bids!"}
+                        </div>
+                      </div>
                     </div>
-                  ))
+                  )}
+
+                  <button
+                    onClick={handlePlaceBid}
+                    disabled={bidButtonDisabled}
+                    style={{
+                      width: "100%",
+                      padding: "20px",
+                      borderRadius: 14,
+                      border: "none",
+                      backgroundImage: bidButtonDisabled
+                        ? "none"
+                        : isLeading
+                          ? "linear-gradient(135deg, #00c896, #00a87a)"
+                          : "linear-gradient(135deg, #D4AF37 0%, #f5d76e 50%, #D4AF37 100%)",
+                      backgroundColor: bidButtonDisabled
+                        ? "#1a3a5c"
+                        : "transparent",
+                      color: bidButtonDisabled
+                        ? "#5a8ab0"
+                        : isLeading
+                          ? "#fff"
+                          : "#111",
+                      fontFamily: "Teko, sans-serif",
+                      fontWeight: 700,
+                      fontSize: "28px",
+                      letterSpacing: 2,
+                      cursor: bidButtonDisabled ? "not-allowed" : "pointer",
+                      boxShadow: bidButtonDisabled
+                        ? "none"
+                        : isLeading
+                          ? "0 6px 24px rgba(0,200,150,0.4)"
+                          : "0 6px 28px rgba(212,175,55,0.5)",
+                      transition: "all 0.2s",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      position: "relative",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {!bidButtonDisabled && !isLeading && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          backgroundImage:
+                            "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%)",
+                          backgroundSize: "200% 100%",
+                          animation: "shimmer 2s linear infinite",
+                        }}
+                      />
+                    )}
+                    <span style={{ position: "relative", zIndex: 1 }}>
+                      {isLeading
+                        ? "✅ YOU ARE LEADING"
+                        : hasWithdrawn
+                          ? "🚫 WITHDRAWN"
+                          : canBid
+                            ? `🔨 BID ${formatCr(nextBid)}`
+                            : bidBlockReason}
+                    </span>
+                    {canBid && !isLeading && (
+                      <span
+                        style={{
+                          position: "relative",
+                          zIndex: 1,
+                          fontSize: "13px",
+                          opacity: 0.7,
+                          fontFamily: "Rajdhani, sans-serif",
+                          fontWeight: 600,
+                          letterSpacing: 1,
+                        }}
+                      >
+                        +
+                        {increment >= 1
+                          ? `₹${increment}Cr`
+                          : `₹${Math.round(increment * 100)}L`}{" "}
+                        from current bid
+                      </span>
+                    )}
+                  </button>
+
+                  {!hasWithdrawn && !isLeading && phase === "bidding" && (
+                    <button
+                      onClick={handleWithdraw}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(255,64,96,0.25)",
+                        background: "rgba(255,64,96,0.06)",
+                        color: "#ff4060",
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 700,
+                        fontSize: isMobile ? "13px" : "14px",
+                        cursor: "pointer",
+                        letterSpacing: 1,
+                        transition: "all 0.15s",
+                        marginTop: 8,
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background =
+                          "rgba(255,64,96,0.12)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background =
+                          "rgba(255,64,96,0.06)")
+                      }
+                    >
+                      🚫 Withdraw — Pass on {currentPlayer?.name}
+                    </button>
+                  )}
+
+                  {hasWithdrawn && (
+                    <div
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: "rgba(255,255,255,0.03)",
+                        color: "#5a8ab0",
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 600,
+                        fontSize: isMobile ? "13px" : "14px",
+                        textAlign: "center",
+                        marginTop: 8,
+                      }}
+                    >
+                      🚫 You have withdrawn — waiting for next player (
+                      {withdrawCount} withdrawn)
+                    </div>
+                  )}
+
+                  {phase === "bidding" && (
+                    <>
+                      <button
+                        onClick={isHost ? forceSkip : voteToSkip}
+                        disabled={!isHost && iHaveVotedSkip}
+                        style={{
+                          width: "100%",
+                          padding: isMobile ? "11px" : "12px",
+                          borderRadius: 12,
+                          border: `1px solid ${
+                            iHaveVotedSkip
+                              ? "rgba(255,255,255,0.08)"
+                              : allVotedSkip
+                                ? "rgba(255,64,96,0.4)"
+                                : "rgba(255,140,0,0.3)"
+                          }`,
+                          background: allVotedSkip
+                            ? "rgba(255,64,96,0.1)"
+                            : iHaveVotedSkip
+                              ? "rgba(255,255,255,0.03)"
+                              : "rgba(255,140,0,0.08)",
+                          color: allVotedSkip
+                            ? "#ff4060"
+                            : iHaveVotedSkip
+                              ? "#5a8ab0"
+                              : "#ff8c00",
+                          fontFamily: "Rajdhani, sans-serif",
+                          fontWeight: 700,
+                          fontSize: isMobile ? "13px" : "14px",
+                          cursor: !isHost && iHaveVotedSkip
+                            ? "not-allowed"
+                            : "pointer",
+                          letterSpacing: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                          transition: "all 0.15s",
+                          marginTop: 8,
+                        }}
+                      >
+                        {isHost
+                          ? "⏭ Force Skip Player"
+                          : iHaveVotedSkip
+                            ? `✓ You voted skip · ${skipVoteCount}/${totalPlayers} voted`
+                            : allVotedSkip
+                              ? `⏭ Skipping... (${skipVoteCount}/${totalPlayers})`
+                              : `⏭ Vote to Skip · ${skipVoteCount}/${totalPlayers} voted`}
+                      </button>
+
+                      {!isHost && !allVotedSkip && skipVoteCount > 0 && (
+                        <div
+                          style={{
+                            textAlign: "center",
+                            color: "#5a8ab0",
+                            fontSize: 11,
+                            marginTop: 4,
+                          }}
+                        >
+                          Need all {totalPlayers} players to vote skip
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* PAUSED */}
+                {phase === "paused" && (
+                  <div
+                    style={{
+                      padding: 20,
+                      borderRadius: 12,
+                      background: "rgba(255,140,0,0.08)",
+                      border: "1px solid rgba(255,140,0,0.3)",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div style={{ fontSize: 36, marginBottom: 6 }}>⏸️</div>
+                    <div
+                      style={{
+                        fontFamily: "Teko, sans-serif",
+                        fontSize: 24,
+                        color: "#ff8c00",
+                      }}
+                    >
+                      AUCTION PAUSED
+                    </div>
+                    <div
+                      style={{ color: "#5a8ab0", fontSize: 12, marginTop: 4 }}
+                    >
+                      Waiting for host to resume...
+                    </div>
+                  </div>
+                )}
+
+                {/* Bid History */}
+                <div
+                  style={{
+                    borderRadius: 10,
+                    background: "rgba(7,24,44,0.6)",
+                    border: "1px solid #1a3a5c",
+                    overflow: "hidden",
+                    flex: 1,
+                    minHeight: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "8px 14px",
+                      borderBottom: "1px solid #1a3a5c",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 700,
+                        fontSize: 11,
+                        color: "#D4AF37",
+                        letterSpacing: 3,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Bid History
+                    </span>
+                    <span
+                      style={{
+                        background: "rgba(212,175,55,0.15)",
+                        color: "#D4AF37",
+                        padding: "1px 7px",
+                        borderRadius: 20,
+                        fontSize: 10,
+                      }}
+                    >
+                      {bidHistory.length}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      overflowY: "auto",
+                      maxHeight: isMobile ? "120px" : "200px",
+                    }}
+                  >
+                    {bidHistory.length === 0 ? (
+                      <div
+                        style={{
+                          padding: 16,
+                          textAlign: "center",
+                          color: "#5a8ab0",
+                          fontSize: 12,
+                          fontStyle: "italic",
+                        }}
+                      >
+                        Be the first to bid!
+                      </div>
+                    ) : (
+                      displayHistory.map((bid: BidEntry, i: number) => (
+                        <div
+                          key={`${bid.userId}-${bid.time}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: isMobile ? "6px 8px" : "8px 12px",
+                            borderBottom:
+                              i < displayHistory.length - 1
+                                ? "1px solid rgba(255,255,255,0.04)"
+                                : "none",
+                            background:
+                              i === 0 ? "rgba(212,175,55,0.06)" : "transparent",
+                            borderLeft:
+                              i === 0
+                                ? "3px solid #D4AF37"
+                                : "3px solid transparent",
+                          }}
+                        >
+                          <img
+                            src={bid.photoURL || ""}
+                            alt=""
+                            style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: "50%",
+                              objectFit: "cover",
+                              flexShrink: 0,
+                            }}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display =
+                                "none";
+                            }}
+                          />
+                          <span
+                            style={{
+                              flex: 1,
+                              fontFamily: "Rajdhani, sans-serif",
+                              fontWeight: 600,
+                              fontSize: isMobile ? 12 : 14,
+                              color: i === 0 ? "#ddeeff" : "#5a8ab0",
+                            }}
+                          >
+                            {bid.name}
+                          </span>
+                          {i === 0 && (
+                            <span
+                              style={{
+                                fontSize: 8,
+                                background: "rgba(212,175,55,0.2)",
+                                color: "#D4AF37",
+                                padding: "1px 5px",
+                                borderRadius: 20,
+                                fontWeight: 700,
+                                letterSpacing: 1,
+                              }}
+                            >
+                              HIGHEST
+                            </span>
+                          )}
+                          <span
+                            style={{
+                              fontFamily: "Teko, sans-serif",
+                              fontSize: isMobile ? 16 : 20,
+                              color: i === 0 ? "#D4AF37" : "#5a8ab0",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {formatCr(bid.amount)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {isHost && (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 0,
+                      padding: isMobile ? "8px 0" : "10px 0",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <button
+                      onClick={handleEndAuction}
+                      style={{
+                        flex: 1,
+                        padding: isMobile ? "8px" : "10px",
+                        borderRadius: 8,
+                        border: "1px solid rgba(255,64,96,0.25)",
+                        background: "rgba(255,64,96,0.06)",
+                        color: "#ff4060",
+                        fontFamily: "Rajdhani,sans-serif",
+                        fontWeight: 700,
+                        fontSize: isMobile ? "12px" : "13px",
+                        cursor: "pointer",
+                        letterSpacing: 1,
+                      }}
+                    >
+                      🏁 End Auction
+                    </button>
+                  </div>
                 )}
               </div>
+              {/* end Bid Area */}
             </div>
-
-            {isHost && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  padding: isMobile ? "8px 0" : "10px 0",
-                  flexShrink: 0,
-                }}
-              >
-                <button
-                  onClick={forceSkip}
-                  style={{
-                    flex: 1,
-                    padding: isMobile ? "8px" : "10px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(255,140,0,0.3)",
-                    background: "rgba(255,140,0,0.08)",
-                    color: "#ff8c00",
-                    fontFamily: "Rajdhani,sans-serif",
-                    fontWeight: 700,
-                    fontSize: isMobile ? "12px" : "13px",
-                    cursor: "pointer",
-                    letterSpacing: 1,
-                  }}
-                >
-                  ⏭ Force Skip
-                </button>
-                <button
-                  onClick={handleEndAuction}
-                  style={{
-                    flex: 1,
-                    padding: isMobile ? "8px" : "10px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(255,64,96,0.25)",
-                    background: "rgba(255,64,96,0.06)",
-                    color: "#ff4060",
-                    fontFamily: "Rajdhani,sans-serif",
-                    fontWeight: 700,
-                    fontSize: isMobile ? "12px" : "13px",
-                    cursor: "pointer",
-                    letterSpacing: 1,
-                  }}
-                >
-                  🏁 End Auction
-                </button>
-              </div>
-            )}
-          </div>
-          {/* end Bid Area */}
-        </div>
-        {/* end MAIN AUCTION AREA */}
+            {/* end MAIN AUCTION AREA */}
           </>
         )}
       </div>

@@ -105,9 +105,14 @@ export default function Playing11Page({
   }, [analysisResult?.rating]);
 
   const breakdown = useMemo(() => {
-    const clamp = (v: number) => Math.max(0, Math.min(10, Math.round(v * 10) / 10));
-    const batting = clamp(4 + roleCount.batsman * 0.95 + roleCount.allRounder * 0.55);
-    const bowling = clamp(4 + roleCount.bowler * 0.95 + roleCount.allRounder * 0.55);
+    const clamp = (v: number) =>
+      Math.max(0, Math.min(10, Math.round(v * 10) / 10));
+    const batting = clamp(
+      4 + roleCount.batsman * 0.95 + roleCount.allRounder * 0.55,
+    );
+    const bowling = clamp(
+      4 + roleCount.bowler * 0.95 + roleCount.allRounder * 0.55,
+    );
     const balance = clamp(
       5 +
         roleCount.allRounder * 1.05 +
@@ -115,9 +120,7 @@ export default function Playing11Page({
         Math.abs(roleCount.batsman - roleCount.bowler) * 0.45,
     );
     const leadership = clamp(
-      (captain ? 5.4 : 3.2) +
-        (viceCaptain ? 1.2 : 0) +
-        ratingValue * 0.25,
+      (captain ? 5.4 : 3.2) + (viceCaptain ? 1.2 : 0) + ratingValue * 0.25,
     );
     const fielding = clamp(
       4.7 +
@@ -125,7 +128,9 @@ export default function Playing11Page({
         roleCount.allRounder * 0.45 +
         Math.min(roleCount.overseas, 4) * 0.2,
     );
-    const xFactor = clamp(4.8 + roleCount.allRounder * 0.75 + ratingValue * 0.2);
+    const xFactor = clamp(
+      4.8 + roleCount.allRounder * 0.75 + ratingValue * 0.2,
+    );
     return [
       { label: "Batting", score: batting, color: "#00c896" },
       { label: "Bowling", score: bowling, color: "#ff8c00" },
@@ -153,34 +158,50 @@ export default function Playing11Page({
   }, [captainPlayer, vcPlayer]);
 
   const funFactText = useMemo(() => {
-    if (selectedPlayers.length === 0) return "Select players to reveal your squad fun fact.";
-    const expensive = [...selectedPlayers].sort((a, b) => b.basePrice - a.basePrice)[0];
+    if (selectedPlayers.length === 0)
+      return "Select players to reveal your squad fun fact.";
+    const expensive = [...selectedPlayers].sort(
+      (a, b) => b.basePrice - a.basePrice,
+    )[0];
     return `Squad Mix: ${roleCount.batsman} BAT, ${roleCount.bowler} BOWL, ${roleCount.allRounder} AR, ${roleCount.wicketKeeper} WK | Highest base value: ${expensive?.name} (${formatCr(expensive?.basePrice)})`;
   }, [selectedPlayers, roleCount]);
+
+  const selectedOverseas = selected11.filter((id) => {
+    const p = mySquad.find((pl) => pl?.id === id);
+    return p?.nationality === "Overseas";
+  }).length;
 
   const hasWK = selected11.some((id) => {
     const p = mySquad.find((pl) => pl?.id === id);
     return p?.role === "WK-Batsman";
   });
 
+  const overseasFull = selectedOverseas >= 4;
+
   const isValid =
     selected11.length === 11 &&
     hasWK &&
+    selectedOverseas <= 4 &&
     !!captain &&
     !!viceCaptain &&
     captain !== viceCaptain &&
     mySquad.length > 0;
 
   const togglePlayer = (id: string) => {
-    setSelected11((prev) => {
-      if (prev.includes(id)) {
-        if (captain === id) setCaptain("");
-        if (viceCaptain === id) setViceCaptain("");
-        return prev.filter((x) => x !== id);
-      }
-      if (prev.length >= 11) return prev;
-      return [...prev, id];
-    });
+    const player = mySquad.find((p) => p?.id === id);
+
+    if (selected11.includes(id)) {
+      setSelected11((prev) => prev.filter((x) => x !== id));
+      if (captain === id) setCaptain("");
+      if (viceCaptain === id) setViceCaptain("");
+      return;
+    }
+
+    if (selected11.length >= 11) return;
+
+    if (player?.nationality === "Overseas" && overseasFull) return;
+
+    setSelected11((prev) => [...prev, id]);
   };
 
   const handleAnalyze = async () => {
@@ -377,7 +398,9 @@ export default function Playing11Page({
               lineHeight: 1.55,
             }}
           >
-            Pick exactly 11 players, ensure at least one wicket keeper, then assign Captain and Vice Captain for AI evaluation.
+            Pick exactly 11 players, include at least 1 WK-Batsman, keep max 4
+            overseas players, then assign Captain and Vice Captain for AI
+            evaluation.
           </div>
         </div>
 
@@ -402,6 +425,76 @@ export default function Playing11Page({
             }}
           >
             👑 Choose Captain & Vice Captain
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                padding: "6px 14px",
+                borderRadius: 20,
+                background:
+                  selected11.length === 11
+                    ? "rgba(0,200,150,0.15)"
+                    : "rgba(255,255,255,0.06)",
+                border: `1px solid ${
+                  selected11.length === 11
+                    ? "rgba(0,200,150,0.3)"
+                    : "rgba(255,255,255,0.1)"
+                }`,
+                color: selected11.length === 11 ? "#00c896" : "#ddeeff",
+                fontFamily: "Rajdhani, sans-serif",
+                fontWeight: 700,
+                fontSize: 13,
+              }}
+            >
+              👥 {selected11.length}/11 Players
+            </div>
+
+            <div
+              style={{
+                padding: "6px 14px",
+                borderRadius: 20,
+                background: hasWK ? "rgba(0,200,150,0.15)" : "rgba(255,64,96,0.1)",
+                border: `1px solid ${
+                  hasWK ? "rgba(0,200,150,0.3)" : "rgba(255,64,96,0.3)"
+                }`,
+                color: hasWK ? "#00c896" : "#ff4060",
+                fontFamily: "Rajdhani, sans-serif",
+                fontWeight: 700,
+                fontSize: 13,
+              }}
+            >
+              🧤 {hasWK ? "1 WK ✓" : "Need 1 WK"}
+            </div>
+
+            <div
+              style={{
+                padding: "6px 14px",
+                borderRadius: 20,
+                background: overseasFull
+                  ? "rgba(255,140,0,0.12)"
+                  : "rgba(255,255,255,0.06)",
+                border: `1px solid ${
+                  overseasFull
+                    ? "rgba(255,140,0,0.4)"
+                    : "rgba(255,255,255,0.1)"
+                }`,
+                color: overseasFull ? "#ff8c00" : "#ddeeff",
+                fontFamily: "Rajdhani, sans-serif",
+                fontWeight: 700,
+                fontSize: 13,
+              }}
+            >
+              🌏 {selectedOverseas}/4 Overseas
+              {overseasFull ? " (MAX)" : ""}
+            </div>
           </div>
 
           <div>
@@ -444,7 +537,10 @@ export default function Playing11Page({
                 paddingRight: "36px",
               }}
             >
-              <option value="" style={{ background: "#07182c", color: "#5a8ab0" }}>
+              <option
+                value=""
+                style={{ background: "#07182c", color: "#5a8ab0" }}
+              >
                 Select Captain
               </option>
               {selected11.map((id) => {
@@ -460,7 +556,8 @@ export default function Playing11Page({
                       color: "#ddeeff",
                     }}
                   >
-                    {p.name} — {p.role === "WK-Batsman"
+                    {p.name} —{" "}
+                    {p.role === "WK-Batsman"
                       ? "🧤 WK"
                       : p.role === "All-Rounder"
                         ? "⚡ AR"
@@ -513,7 +610,10 @@ export default function Playing11Page({
                 paddingRight: "36px",
               }}
             >
-              <option value="" style={{ background: "#07182c", color: "#5a8ab0" }}>
+              <option
+                value=""
+                style={{ background: "#07182c", color: "#5a8ab0" }}
+              >
                 Select Vice Captain
               </option>
               {selected11.map((id) => {
@@ -529,7 +629,8 @@ export default function Playing11Page({
                       color: "#ddeeff",
                     }}
                   >
-                    {p.name} — {p.role === "WK-Batsman"
+                    {p.name} —{" "}
+                    {p.role === "WK-Batsman"
                       ? "🧤 WK"
                       : p.role === "All-Rounder"
                         ? "⚡ AR"
@@ -634,6 +735,10 @@ export default function Playing11Page({
           >
             {mySquad.map((p) => {
               const isSelected = selected11.includes(p.id);
+              const isOverseasBlocked =
+                !isSelected && p.nationality === "Overseas" && overseasFull;
+              const isBlocked =
+                (!isSelected && selected11.length >= 11) || isOverseasBlocked;
               return (
                 <button
                   key={p.id}
@@ -643,7 +748,8 @@ export default function Playing11Page({
                     textAlign: "left",
                     padding: isMobile ? "10px 8px" : "14px 12px",
                     borderRadius: 12,
-                    cursor: "pointer",
+                    cursor: isBlocked ? "not-allowed" : "pointer",
+                    opacity: isBlocked ? 0.35 : 1,
                     border: `1px solid ${isSelected ? "rgba(0,200,150,0.55)" : "#1a3a5c"}`,
                     background: isSelected
                       ? "rgba(0,200,150,0.12)"
@@ -702,7 +808,9 @@ export default function Playing11Page({
                     }}
                   >
                     <span>{roleLabel(p.role)}</span>
-                    <span>{p.nationality === "Overseas" ? "🌏 OS" : "🇮🇳 IND"}</span>
+                    <span>
+                      {p.nationality === "Overseas" ? "🌏 OS" : "🇮🇳 IND"}
+                    </span>
                   </div>
                 </button>
               );
@@ -724,15 +832,25 @@ export default function Playing11Page({
             color: isValid ? "#111" : "#5a8ab0",
             fontFamily: "Teko, sans-serif",
             fontWeight: 700,
-            fontSize: isMobile ? "24px" : "28px",
+            fontSize: isMobile ? "18px" : "22px",
             letterSpacing: 1,
             cursor: isValid && !isAnalyzing ? "pointer" : "not-allowed",
-            boxShadow: isValid
-              ? "0 8px 28px rgba(212,175,55,0.45)"
-              : "none",
+            boxShadow: isValid ? "0 8px 28px rgba(212,175,55,0.45)" : "none",
           }}
         >
-          {isAnalyzing ? "ANALYZING..." : "🤖 Analyze Playing XI"}
+          {isAnalyzing
+            ? "⏳ Submitting..."
+            : !hasWK
+              ? "⚠️ Add at least 1 Wicket Keeper"
+              : selected11.length < 11
+                ? `Select ${11 - selected11.length} more players`
+                : selectedOverseas > 4
+                  ? "⚠️ Max 4 overseas players"
+                  : !captain
+                    ? "👑 Select a Captain first"
+                    : !viceCaptain
+                      ? "🥈 Select a Vice Captain"
+                      : "🚀 SUBMIT & GET AI ANALYSIS"}
         </button>
 
         {isAnalyzing && (
@@ -857,7 +975,8 @@ export default function Playing11Page({
                   lineHeight: 1.5,
                 }}
               >
-                XI: {selected11.length}/11 • WK: {hasWK ? "Yes" : "No"} • Captain: {captainName || "-"}
+                XI: {selected11.length}/11 • WK: {hasWK ? "Yes" : "No"} •
+                Captain: {captainName || "-"}
               </div>
             </div>
 
@@ -940,7 +1059,8 @@ export default function Playing11Page({
                     color: "#ddeeff",
                   }}
                 >
-                  {analysisResult.strengths || "Balanced squad with strong intent."}
+                  {analysisResult.strengths ||
+                    "Balanced squad with strong intent."}
                 </div>
               </div>
 
@@ -971,7 +1091,8 @@ export default function Playing11Page({
                     color: "#ddeeff",
                   }}
                 >
-                  {analysisResult.weaknesses || "Some matchups may need role flexibility."}
+                  {analysisResult.weaknesses ||
+                    "Some matchups may need role flexibility."}
                 </div>
               </div>
             </div>
@@ -983,8 +1104,11 @@ export default function Playing11Page({
                 color: "#ddeeff",
               }}
             >
-              <span style={{ color: "#D4AF37", fontWeight: 700 }}>AI Verdict:</span>{" "}
-              {analysisResult.summary || "Strong combination with a competitive T20 core."}
+              <span style={{ color: "#D4AF37", fontWeight: 700 }}>
+                AI Verdict:
+              </span>{" "}
+              {analysisResult.summary ||
+                "Strong combination with a competitive T20 core."}
             </div>
 
             <div
@@ -998,7 +1122,9 @@ export default function Playing11Page({
                 lineHeight: 1.6,
               }}
             >
-              <span style={{ color: "#4da6ff", fontWeight: 700 }}>Captain Analysis:</span>{" "}
+              <span style={{ color: "#4da6ff", fontWeight: 700 }}>
+                Captain Analysis:
+              </span>{" "}
               {captainAnalysisText}
             </div>
 
