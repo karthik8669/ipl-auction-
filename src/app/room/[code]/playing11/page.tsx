@@ -93,7 +93,9 @@ export default function Playing11Page({
       if (analysisPayload) {
         if (typeof analysisPayload === "string") {
           try {
-            setCombinedAnalysis(JSON.parse(analysisPayload) as CombinedAnalysis);
+            setCombinedAnalysis(
+              JSON.parse(analysisPayload) as CombinedAnalysis,
+            );
           } catch {
             // ignore parse error
           }
@@ -254,9 +256,9 @@ export default function Playing11Page({
     captain !== viceCaptain &&
     mySquad.length > 0;
 
-  const activeParticipants = Object.entries(roomState?.participants || {}).filter(
-    ([, p]: any) => !p?.hasLeft,
-  );
+  const activeParticipants = Object.entries(
+    roomState?.participants || {},
+  ).filter(([, p]: any) => !p?.hasLeft);
   const totalActive = activeParticipants.length;
   const submittedCount = activeParticipants.filter(
     ([uid]) => !!allSubmissions[uid],
@@ -272,8 +274,10 @@ export default function Playing11Page({
     if (!user) return;
     const mySubmission = allSubmissions?.[user.uid];
     if (!mySubmission) return;
-    if (Array.isArray(mySubmission.players)) setSelected11(mySubmission.players);
-    if (typeof mySubmission.captain === "string") setCaptain(mySubmission.captain);
+    if (Array.isArray(mySubmission.players))
+      setSelected11(mySubmission.players);
+    if (typeof mySubmission.captain === "string")
+      setCaptain(mySubmission.captain);
     if (typeof mySubmission.viceCaptain === "string")
       setViceCaptain(mySubmission.viceCaptain);
   }, [allSubmissions, user]);
@@ -323,14 +327,17 @@ export default function Playing11Page({
     setAnalyzing(true);
 
     try {
-      const existingAnalysis = roomState?.finalAnalysis || roomState?.playing11Analysis;
+      const existingAnalysis =
+        roomState?.finalAnalysis || roomState?.playing11Analysis;
       if (existingAnalysis) {
         const parsed =
           typeof existingAnalysis === "string"
             ? (JSON.parse(existingAnalysis) as CombinedAnalysis)
             : (existingAnalysis as CombinedAnalysis);
         setCombinedAnalysis(parsed);
-        const myInsight = (parsed?.leaderboard || []).find((insight) => insight.uid === user.uid);
+        const myInsight = (parsed?.leaderboard || []).find(
+          (insight) => insight.uid === user.uid,
+        );
         if (myInsight) {
           setAnalysisResult({
             rating: myInsight.score,
@@ -367,7 +374,9 @@ export default function Playing11Page({
           };
         })
         .filter(
-          (team): team is {
+          (
+            team,
+          ): team is {
             uid: string;
             name: string;
             players: any[];
@@ -1040,17 +1049,17 @@ export default function Playing11Page({
               ? `✅ Submitted (${submittedCount}/${totalActive})`
               : analyzing
                 ? "🤖 ANALYZING ALL TEAMS..."
-            : !hasWK
-              ? "⚠️ Add at least 1 Wicket Keeper"
-              : selected11.length < 11
-                ? `Select ${11 - selected11.length} more players`
-                : selectedOverseas > 4
-                  ? "⚠️ Max 4 overseas players"
-                  : !captain
-                    ? "👑 Select a Captain first"
-                    : !viceCaptain
-                      ? "🥈 Select a Vice Captain"
-                      : "🚀 SUBMIT PLAYING 11"}
+                : !hasWK
+                  ? "⚠️ Add at least 1 Wicket Keeper"
+                  : selected11.length < 11
+                    ? `Select ${11 - selected11.length} more players`
+                    : selectedOverseas > 4
+                      ? "⚠️ Max 4 overseas players"
+                      : !captain
+                        ? "👑 Select a Captain first"
+                        : !viceCaptain
+                          ? "🥈 Select a Vice Captain"
+                          : "🚀 SUBMIT PLAYING 11"}
         </button>
 
         {analyzing && (
@@ -1083,7 +1092,7 @@ export default function Playing11Page({
                 marginBottom: 8,
               }}
             >
-                🤖 AI IS ANALYZING ALL PLAYING 11s...
+              🤖 AI IS ANALYZING ALL PLAYING 11s...
             </div>
             <div
               style={{
@@ -1092,9 +1101,9 @@ export default function Playing11Page({
                 lineHeight: 1.6,
               }}
             >
-                Comparing all submitted squads,
+              Comparing all submitted squads,
               <br />
-                captain choices and team strength
+              captain choices and team strength
             </div>
             <div
               style={{
@@ -1218,7 +1227,7 @@ export default function Playing11Page({
                         lineHeight: 1,
                       }}
                     >
-                        {Number(insight.score || 0).toFixed(1)}
+                      {Number(insight.score || 0).toFixed(1)}
                     </div>
                   </div>
                 ))}

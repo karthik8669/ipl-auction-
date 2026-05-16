@@ -282,7 +282,9 @@ export default function AuctionPage() {
   const mobileTimerRadius = isShortMobile ? 30 : 34;
   const mobileTimerCirc = Math.PI * 2 * mobileTimerRadius;
   const leaderPhoto = leaderId ? participants[leaderId]?.photoURL || "" : "";
-  const winnerFranchise = leaderId ? currentRoom?.franchises?.[leaderId] || {} : {};
+  const winnerFranchise = leaderId
+    ? currentRoom?.franchises?.[leaderId] || {}
+    : {};
   const winnerColor =
     (winnerFranchise as { color?: string })?.color || "#D4AF37";
 
@@ -600,7 +602,10 @@ export default function AuctionPage() {
           return;
         }
 
-        const participantRef = ref(db, `rooms/${code}/participants/${user.uid}`);
+        const participantRef = ref(
+          db,
+          `rooms/${code}/participants/${user.uid}`,
+        );
         const partSnap = await get(participantRef);
 
         if (partSnap.exists()) {
@@ -880,19 +885,26 @@ export default function AuctionPage() {
           LOADING AUCTION...
         </div>
         {isHost && (
-          <div style={{ position: 'absolute', top: isMobile ? 8 : 12, right: isMobile ? 8 : 24, zIndex: 120 }}>
-            {phase === 'bidding' ? (
+          <div
+            style={{
+              position: "absolute",
+              top: isMobile ? 8 : 12,
+              right: isMobile ? 8 : 24,
+              zIndex: 120,
+            }}
+          >
+            {phase === "bidding" ? (
               <button
                 onClick={pauseAuction}
                 style={{
-                  padding: '8px 12px',
+                  padding: "8px 12px",
                   borderRadius: 10,
-                  border: '1px solid rgba(255,140,0,0.2)',
-                  background: 'rgba(255,140,0,0.06)',
-                  color: '#ff8c00',
-                  fontFamily: 'Rajdhani, sans-serif',
+                  border: "1px solid rgba(255,140,0,0.2)",
+                  background: "rgba(255,140,0,0.06)",
+                  color: "#ff8c00",
+                  fontFamily: "Rajdhani, sans-serif",
                   fontWeight: 700,
-                  cursor: 'pointer',
+                  cursor: "pointer",
                 }}
               >
                 ⏸ Pause
@@ -901,14 +913,14 @@ export default function AuctionPage() {
               <button
                 onClick={resumeAuction}
                 style={{
-                  padding: '8px 12px',
+                  padding: "8px 12px",
                   borderRadius: 10,
-                  border: '1px solid rgba(0,200,150,0.12)',
-                  background: 'rgba(0,200,150,0.06)',
-                  color: '#00c896',
-                  fontFamily: 'Rajdhani, sans-serif',
+                  border: "1px solid rgba(0,200,150,0.12)",
+                  background: "rgba(0,200,150,0.06)",
+                  color: "#00c896",
+                  fontFamily: "Rajdhani, sans-serif",
                   fontWeight: 700,
-                  cursor: 'pointer',
+                  cursor: "pointer",
                 }}
               >
                 ▶ Continue (10s)
@@ -1105,9 +1117,16 @@ export default function AuctionPage() {
               <div style={{ color: "#5a8ab0", fontSize: 13, lineHeight: 1.7 }}>
                 <div>• Squad limit is 20 players.</div>
                 <div>• Overseas limit is 8 players per squad.</div>
-                <div>• Withdrawn bids cannot be restored for the current player.</div>
-                <div>• Unsold players may recycle up to 3 times if squads are still incomplete.</div>
-                <div>• Leaving the auction locks your slot for the session.</div>
+                <div>
+                  • Withdrawn bids cannot be restored for the current player.
+                </div>
+                <div>
+                  • Unsold players may recycle up to 3 times if squads are still
+                  incomplete.
+                </div>
+                <div>
+                  • Leaving the auction locks your slot for the session.
+                </div>
               </div>
               <button
                 onClick={acknowledgeRules}
@@ -1310,7 +1329,9 @@ export default function AuctionPage() {
                   position: "relative",
                   flexShrink: 0,
                   opacity: playerVisible ? 1 : 0,
-                  transform: playerVisible ? "translateY(0)" : "translateY(10px)",
+                  transform: playerVisible
+                    ? "translateY(0)"
+                    : "translateY(10px)",
                   transition: "opacity 0.3s ease, transform 0.3s ease",
                 }}
               >
@@ -1893,7 +1914,9 @@ export default function AuctionPage() {
                   </div>
                 )}
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
                   <button
                     onClick={voteToSkip}
                     disabled={iHaveVotedSkip}
@@ -2374,7 +2397,9 @@ export default function AuctionPage() {
                   boxShadow: `0 10px 30px ${rc.glow}`,
                   background: `linear-gradient(145deg, ${rc.glow} 0%, rgba(7,24,44,0.92) 46%, rgba(7,24,44,0.85) 100%)`,
                   opacity: playerVisible ? 1 : 0,
-                  transform: playerVisible ? "translateY(0)" : "translateY(10px)",
+                  transform: playerVisible
+                    ? "translateY(0)"
+                    : "translateY(10px)",
                   transition: "opacity 0.3s ease, transform 0.3s ease",
                 }}
               >
@@ -2643,7 +2668,9 @@ export default function AuctionPage() {
                         WebkitTextFillColor: "transparent",
                         backgroundClip: "text",
                         filter: "drop-shadow(0 0 20px rgba(212,175,55,0.35))",
-                        animation: bidFlash ? "goldPulse 0.6s ease-out" : "none",
+                        animation: bidFlash
+                          ? "goldPulse 0.6s ease-out"
+                          : "none",
                       }}
                     >
                       {currentBid > 0
@@ -2975,7 +3002,13 @@ export default function AuctionPage() {
 
                   {phase === "bidding" && (
                     <>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                        }}
+                      >
                         <button
                           onClick={voteToSkip}
                           disabled={iHaveVotedSkip}
@@ -3316,9 +3349,13 @@ export default function AuctionPage() {
             >
               You have already bought{" "}
               <span style={{ color: "#D4AF37", fontWeight: 700 }}>
-                {Object.keys(currentRoom?.teams?.[user?.uid || ""] || {}).length} players
-              </span>
-              {" "}and spent{" "}
+                {
+                  Object.keys(currentRoom?.teams?.[user?.uid || ""] || {})
+                    .length
+                }{" "}
+                players
+              </span>{" "}
+              and spent{" "}
               <span style={{ color: "#ff4060", fontWeight: 700 }}>
                 {formatCr(100 - (me?.budget ?? 100))}
               </span>
@@ -3352,8 +3389,10 @@ export default function AuctionPage() {
                   lineHeight: 1.6,
                 }}
               >
-                Once you leave, your slot is locked.<br />
-                Your purchased players will remain<br />
+                Once you leave, your slot is locked.
+                <br />
+                Your purchased players will remain
+                <br />
                 but you won&apos;t be able to bid anymore.
               </div>
             </div>
@@ -3385,9 +3424,8 @@ export default function AuctionPage() {
                   const markLeft = async () => {
                     try {
                       if (!user?.uid) return;
-                      const { update: fbUpdate } = await import(
-                        "firebase/database"
-                      );
+                      const { update: fbUpdate } =
+                        await import("firebase/database");
                       await fbUpdate(ref(db), {
                         [`rooms/${code}/participants/${user.uid}/hasLeft`]: true,
                         [`rooms/${code}/participants/${user.uid}/leftAt`]:
@@ -3488,7 +3526,9 @@ export default function AuctionPage() {
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
                 {teamBudgetCards.map((team) => (
                   <div
                     key={team.uid}
@@ -3966,24 +4006,24 @@ export default function AuctionPage() {
                             </span>
                           )}
                         </div>
-                          {isPoolRandomized && (
-                            <span
-                              style={{
-                                padding: "3px 8px",
-                                borderRadius: 20,
-                                background: "rgba(155,89,182,0.15)",
-                                border: "1px solid rgba(155,89,182,0.3)",
-                                color: "#b57bee",
-                                fontSize: 10,
-                                letterSpacing: 1,
-                                fontFamily: "Rajdhani, sans-serif",
-                                fontWeight: 700,
-                                flexShrink: 0,
-                              }}
-                            >
-                              🎲 RANDOM
-                            </span>
-                          )}
+                        {isPoolRandomized && (
+                          <span
+                            style={{
+                              padding: "3px 8px",
+                              borderRadius: 20,
+                              background: "rgba(155,89,182,0.15)",
+                              border: "1px solid rgba(155,89,182,0.3)",
+                              color: "#b57bee",
+                              fontSize: 10,
+                              letterSpacing: 1,
+                              fontFamily: "Rajdhani, sans-serif",
+                              fontWeight: 700,
+                              flexShrink: 0,
+                            }}
+                          >
+                            🎲 RANDOM
+                          </span>
+                        )}
                         <div
                           style={{
                             fontFamily: "Teko, sans-serif",

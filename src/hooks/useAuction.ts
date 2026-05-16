@@ -61,8 +61,8 @@ export function useAuction(
   const allSquadsFull = useMemo(
     () =>
       Object.values(safeParticipants).length > 0 &&
-      Object.values(safeParticipants).every((participant) =>
-        (participant?.squadSize ?? 0) >= 20,
+      Object.values(safeParticipants).every(
+        (participant) => (participant?.squadSize ?? 0) >= 20,
       ),
     [safeParticipants],
   );
@@ -173,51 +173,61 @@ export function useAuction(
 
   const moveToNext = useCallback(
     async (unsoldPool: string[] = safeUnsoldPlayers) => {
-    if (!roomCode || !currentRoom) return;
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= pool.length) {
-      const uniqueUnsold = Array.from(new Set(unsoldPool)).filter(
-        (id) => players.some((player) => player.id === id),
-      );
+      if (!roomCode || !currentRoom) return;
+      const nextIndex = currentIndex + 1;
+      if (nextIndex >= pool.length) {
+        const uniqueUnsold = Array.from(new Set(unsoldPool)).filter((id) =>
+          players.some((player) => player.id === id),
+        );
 
-      if (!allSquadsFull && uniqueUnsold.length > 0 && recycleCount < 3) {
+        if (!allSquadsFull && uniqueUnsold.length > 0 && recycleCount < 3) {
+          await update(ref(realtimeDb, `rooms/${roomCode}`), {
+            "auction/pool": uniqueUnsold,
+            "auction/currentIndex": 0,
+            "auction/currentBid": 0,
+            "auction/leaderId": null,
+            "auction/leaderName": null,
+            "auction/leaderPhoto": null,
+            "auction/bidHistory": [],
+            "auction/withdrawals": null,
+            "auction/phase": "bidding",
+            "auction/timerEnd": Date.now() + 15000,
+            "auction/recycleCount": recycleCount + 1,
+            unsoldPlayers: [],
+          });
+          return true;
+        }
+
         await update(ref(realtimeDb, `rooms/${roomCode}`), {
-          "auction/pool": uniqueUnsold,
-          "auction/currentIndex": 0,
-          "auction/currentBid": 0,
-          "auction/leaderId": null,
-          "auction/leaderName": null,
-          "auction/leaderPhoto": null,
-          "auction/bidHistory": [],
-          "auction/withdrawals": null,
-          "auction/phase": "bidding",
-          "auction/timerEnd": Date.now() + 15000,
-          "auction/recycleCount": recycleCount + 1,
-          unsoldPlayers: [],
+          "meta/status": "finished",
+          "auction/phase": "finished",
+          "auction/timerEnd": 0,
         });
         return true;
       }
-
-      await update(ref(realtimeDb, `rooms/${roomCode}`), {
-        "meta/status": "finished",
-        "auction/phase": "finished",
-        "auction/timerEnd": 0,
+      await update(ref(realtimeDb, `rooms/${roomCode}/auction`), {
+        phase: "bidding",
+        currentIndex: nextIndex,
+        currentBid: 0,
+        leaderId: null,
+        leaderName: null,
+        leaderPhoto: null,
+        bidHistory: [],
+        withdrawals: null,
+        timerEnd: Date.now() + 15000,
       });
       return true;
-    }
-    await update(ref(realtimeDb, `rooms/${roomCode}/auction`), {
-      phase: "bidding",
-      currentIndex: nextIndex,
-      currentBid: 0,
-      leaderId: null,
-      leaderName: null,
-      leaderPhoto: null,
-      bidHistory: [],
-      withdrawals: null,
-      timerEnd: Date.now() + 15000,
-    });
-    return true;
-  }, [allSquadsFull, currentIndex, currentRoom, pool.length, recycleCount, roomCode, safeUnsoldPlayers]);
+    },
+    [
+      allSquadsFull,
+      currentIndex,
+      currentRoom,
+      pool.length,
+      recycleCount,
+      roomCode,
+      safeUnsoldPlayers,
+    ],
+  );
 
   const finalizeSold = useCallback(async () => {
     if (!roomCode || !currentRoom || !currentPlayer) return false;

@@ -44,7 +44,7 @@ export interface TradeOffer {
   playerId: string;
   playerName: string;
   offerAmount: number;
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  status: "pending" | "accepted" | "rejected" | "cancelled";
   createdAt: number;
   respondedAt?: number;
 }
@@ -63,7 +63,7 @@ export interface ChatMessage {
   photoURL: string;
   text: string;
   emoji: string | null;
-  type: 'message' | 'reaction' | 'system';
+  type: "message" | "reaction" | "system";
   franchiseName?: string;
   franchiseColor?: string;
   franchiseLogo?: string;

@@ -37,7 +37,9 @@ export default function ResultsPage({
   params: Promise<{ code: string }>;
 }) {
   const { code: rawCode } = use(params);
-  const code = String(rawCode || "").trim().toUpperCase();
+  const code = String(rawCode || "")
+    .trim()
+    .toUpperCase();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -136,33 +138,38 @@ export default function ResultsPage({
         Record<string, { soldFor?: number }>
       >;
 
-      const teamsPayload = Object.entries(playing11).map(([uid, submission]) => {
-        const participant = participants[uid] || {};
-        const rawTeam = teams[uid] || {};
-        const teamPlayers = (submission.players || [])
-          .map((id) => {
-            const pl = ALL_PLAYERS.find((x) => x.id === id);
-            if (!pl) return null;
-            return {
-              name: pl.name,
-              role: pl.role,
-              nationality: pl.nationality,
-              soldFor: rawTeam[id]?.soldFor ?? pl.basePrice,
-              basePrice: pl.basePrice,
-              stats: pl.stats,
-            };
-          })
-          .filter(Boolean);
+      const teamsPayload = Object.entries(playing11).map(
+        ([uid, submission]) => {
+          const participant = participants[uid] || {};
+          const rawTeam = teams[uid] || {};
+          const teamPlayers = (submission.players || [])
+            .map((id) => {
+              const pl = ALL_PLAYERS.find((x) => x.id === id);
+              if (!pl) return null;
+              return {
+                name: pl.name,
+                role: pl.role,
+                nationality: pl.nationality,
+                soldFor: rawTeam[id]?.soldFor ?? pl.basePrice,
+                basePrice: pl.basePrice,
+                stats: pl.stats,
+              };
+            })
+            .filter(Boolean);
 
-        return {
-          uid,
-          name: participant?.name || "Unknown",
-          captain: ALL_PLAYERS.find((pl) => pl.id === submission.captain)?.name || "",
-          viceCaptain:
-            ALL_PLAYERS.find((pl) => pl.id === submission.viceCaptain)?.name || "",
-          players: teamPlayers,
-        };
-      });
+          return {
+            uid,
+            name: participant?.name || "Unknown",
+            captain:
+              ALL_PLAYERS.find((pl) => pl.id === submission.captain)?.name ||
+              "",
+            viceCaptain:
+              ALL_PLAYERS.find((pl) => pl.id === submission.viceCaptain)
+                ?.name || "",
+            players: teamPlayers,
+          };
+        },
+      );
 
       const res = await fetch("/api/analyze-all-teams", {
         method: "POST",
@@ -612,10 +619,24 @@ export default function ResultsPage({
               >
                 <span style={{ fontSize: 40 }}>🏆</span>
                 <div>
-                  <div style={{ color: "#5a8ab0", fontSize: 11, letterSpacing: 2, textTransform: "uppercase" }}>
+                  <div
+                    style={{
+                      color: "#5a8ab0",
+                      fontSize: 11,
+                      letterSpacing: 2,
+                      textTransform: "uppercase",
+                    }}
+                  >
                     Best Playing 11
                   </div>
-                  <div style={{ fontFamily: "Teko, sans-serif", fontSize: 36, color: "#D4AF37", lineHeight: 1 }}>
+                  <div
+                    style={{
+                      fontFamily: "Teko, sans-serif",
+                      fontSize: 36,
+                      color: "#D4AF37",
+                      lineHeight: 1,
+                    }}
+                  >
                     {aiAnalysis.winnerName || "Awaiting result"}
                   </div>
                 </div>
@@ -629,44 +650,122 @@ export default function ResultsPage({
                   wordBreak: "break-word",
                 }}
               >
-                  {String(aiAnalysis.summary || "")}
+                {String(aiAnalysis.summary || "")}
               </p>
-                {!!aiAnalysis.leaderboard?.length && (
+              {!!aiAnalysis.leaderboard?.length && (
                 <div
                   style={{
-                      padding: "10px 12px",
+                    padding: "10px 12px",
                     borderRadius: 8,
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid #1a3a5c",
-                      color: "#ddeeff",
-                      fontSize: 13,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid #1a3a5c",
+                    color: "#ddeeff",
+                    fontSize: 13,
                   }}
                 >
-                    <div style={{ color: "#5a8ab0", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>
-                      Final AI Leaderboard
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {(aiAnalysis.leaderboard || []).map((team) => (
-                        <div key={team.uid} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(7,24,44,0.75)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                            <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: team.rank === 1 ? "#D4AF37" : team.rank === 2 ? "#aaa" : team.rank === 3 ? "#cd7f32" : "rgba(255,255,255,0.08)", color: team.rank && team.rank <= 3 ? "#111" : "#ddeeff", fontFamily: "Teko, sans-serif", fontSize: 16, fontWeight: 700 }}>
-                              {team.rank || 0}
-                            </div>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, color: "#ddeeff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {team.name}
-                              </div>
-                              <div style={{ color: "#5a8ab0", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {team.verdict || "Strong lineup"}
-                              </div>
-                            </div>
+                  <div
+                    style={{
+                      color: "#5a8ab0",
+                      fontSize: 11,
+                      letterSpacing: 2,
+                      textTransform: "uppercase",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Final AI Leaderboard
+                  </div>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
+                    {(aiAnalysis.leaderboard || []).map((team) => (
+                      <div
+                        key={team.uid}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          background: "rgba(7,24,44,0.75)",
+                          border: "1px solid rgba(255,255,255,0.06)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            minWidth: 0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: "50%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                              background:
+                                team.rank === 1
+                                  ? "#D4AF37"
+                                  : team.rank === 2
+                                    ? "#aaa"
+                                    : team.rank === 3
+                                      ? "#cd7f32"
+                                      : "rgba(255,255,255,0.08)",
+                              color:
+                                team.rank && team.rank <= 3
+                                  ? "#111"
+                                  : "#ddeeff",
+                              fontFamily: "Teko, sans-serif",
+                              fontSize: 16,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {team.rank || 0}
                           </div>
-                          <div style={{ fontFamily: "Teko, sans-serif", fontSize: 22, color: "#D4AF37", flexShrink: 0 }}>
-                            {Number(team.score || 0).toFixed(1)}
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontFamily: "Rajdhani, sans-serif",
+                                fontWeight: 700,
+                                color: "#ddeeff",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {team.name}
+                            </div>
+                            <div
+                              style={{
+                                color: "#5a8ab0",
+                                fontSize: 11,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {team.verdict || "Strong lineup"}
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                        <div
+                          style={{
+                            fontFamily: "Teko, sans-serif",
+                            fontSize: 22,
+                            color: "#D4AF37",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {Number(team.score || 0).toFixed(1)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -883,7 +982,9 @@ export default function ResultsPage({
                     : "none",
                 cursor: "pointer",
                 background:
-                  team.uid === currentTab ? "rgba(212,175,55,0.06)" : "transparent",
+                  team.uid === currentTab
+                    ? "rgba(212,175,55,0.06)"
+                    : "transparent",
                 transition: "background 0.15s",
               }}
             >
@@ -924,7 +1025,8 @@ export default function ResultsPage({
                   flexShrink: 0,
                 }}
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(team.name)}&background=1a3a5c&color=D4AF37&bold=true`;
+                  (e.target as HTMLImageElement).src =
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(team.name)}&background=1a3a5c&color=D4AF37&bold=true`;
                 }}
               />
 
@@ -1007,9 +1109,7 @@ export default function ResultsPage({
                 >
                   {formatCr(team.budget)}
                 </div>
-                <div style={{ color: "#5a8ab0", fontSize: 11 }}>
-                  remaining
-                </div>
+                <div style={{ color: "#5a8ab0", fontSize: 11 }}>remaining</div>
               </div>
             </div>
           ))}
@@ -1044,7 +1144,10 @@ export default function ResultsPage({
               {teamsData.map((team) => (
                 <button
                   key={team.uid}
-                  onClick={() => { setSelectedTab(team.uid); setSquadCardMode(false); }}
+                  onClick={() => {
+                    setSelectedTab(team.uid);
+                    setSquadCardMode(false);
+                  }}
                   style={{
                     flexShrink: 0,
                     whiteSpace: "nowrap",
@@ -1123,7 +1226,8 @@ export default function ResultsPage({
                     lineHeight: 1,
                   }}
                 >
-                  {selectedTeam.name}&apos;s {squadCardMode ? "Squad Card" : "Squad"}
+                  {selectedTeam.name}&apos;s{" "}
+                  {squadCardMode ? "Squad Card" : "Squad"}
                 </div>
                 <div
                   style={{
@@ -1182,166 +1286,185 @@ export default function ResultsPage({
               {squadCardMode ? (
                 <SquadCardGenerator
                   team={selectedTeam}
-                  franchise={roomState?.franchises?.[selectedTeam.uid] || { name: selectedTeam.name, color: '#D4AF37', logo: '🏏' }}
+                  franchise={
+                    roomState?.franchises?.[selectedTeam.uid] || {
+                      name: selectedTeam.name,
+                      color: "#D4AF37",
+                      logo: "🏏",
+                    }
+                  }
                   isMobile={isMobile}
                 />
               ) : (
                 <>
-              {(
-                [
-                  "Batsman",
-                  "WK-Batsman",
-                  "All-Rounder",
-                  "Bowler",
-                ] as const
-              ).map((role) => {
-                const rolePlayers = selectedTeam.players.filter(
-                  (p) => p.role === role,
-                );
-                if (!rolePlayers.length) return null;
-                const roleColors: Record<
-                  "Batsman" | "WK-Batsman" | "All-Rounder" | "Bowler",
-                  string
-                > = {
-                  Batsman: "#00c896",
-                  "WK-Batsman": "#ff8c00",
-                  "All-Rounder": "#b57bee",
-                  Bowler: "#ff4060",
-                };
-                const color = roleColors[role] || "#5a8ab0";
-                return (
-                  <div key={role} style={{ marginBottom: 20 }}>
-                    <div
-                      style={{
-                        fontFamily: "Rajdhani, sans-serif",
-                        fontWeight: 700,
-                        fontSize: 11,
-                        letterSpacing: 3,
-                        color,
-                        textTransform: "uppercase",
-                        marginBottom: 10,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 20,
-                          height: 1,
-                          background: color,
-                          display: "inline-block",
-                        }}
-                      />
-                      {role}s ({rolePlayers.length})
-                      <span
-                        style={{
-                          flex: 1,
-                          height: 1,
-                          background: `linear-gradient(90deg,${color}40,transparent)`,
-                          display: "inline-block",
-                        }}
-                      />
-                    </div>
-
-                    {rolePlayers.map((p) => {
-                      const espnId = getEspnId(p.id);
-                      const imgSrc = espnId
-                        ? `https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_auto:low/lsci/db/PICTURES/CMS/316500/${espnId}.png`
-                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1a3a5c&color=D4AF37&bold=true&size=80`;
-                      return (
+                  {(
+                    ["Batsman", "WK-Batsman", "All-Rounder", "Bowler"] as const
+                  ).map((role) => {
+                    const rolePlayers = selectedTeam.players.filter(
+                      (p) => p.role === role,
+                    );
+                    if (!rolePlayers.length) return null;
+                    const roleColors: Record<
+                      "Batsman" | "WK-Batsman" | "All-Rounder" | "Bowler",
+                      string
+                    > = {
+                      Batsman: "#00c896",
+                      "WK-Batsman": "#ff8c00",
+                      "All-Rounder": "#b57bee",
+                      Bowler: "#ff4060",
+                    };
+                    const color = roleColors[role] || "#5a8ab0";
+                    return (
+                      <div key={role} style={{ marginBottom: 20 }}>
                         <div
-                          key={p.id}
                           style={{
+                            fontFamily: "Rajdhani, sans-serif",
+                            fontWeight: 700,
+                            fontSize: 11,
+                            letterSpacing: 3,
+                            color,
+                            textTransform: "uppercase",
+                            marginBottom: 10,
                             display: "flex",
                             alignItems: "center",
-                            gap: 12,
-                            padding: "10px 14px",
-                            borderRadius: 10,
-                            marginBottom: 6,
-                            background: "rgba(13,34,64,0.5)",
-                            border: "1px solid #1a3a5c",
+                            gap: 8,
                           }}
                         >
-                          <img
-                            src={imgSrc}
-                            alt=""
+                          <span
                             style={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: "50%",
-                              objectFit: "cover",
-                              flexShrink: 0,
-                            }}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1a3a5c&color=D4AF37&bold=true&size=80`;
+                              width: 20,
+                              height: 1,
+                              background: color,
+                              display: "inline-block",
                             }}
                           />
-                          <span style={{ fontSize: 16, flexShrink: 0 }}>
-                            {p.nationality === "Indian" ? "🇮🇳" : "🌏"}
-                          </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
+                          {role}s ({rolePlayers.length})
+                          <span
+                            style={{
+                              flex: 1,
+                              height: 1,
+                              background: `linear-gradient(90deg,${color}40,transparent)`,
+                              display: "inline-block",
+                            }}
+                          />
+                        </div>
+
+                        {rolePlayers.map((p) => {
+                          const espnId = getEspnId(p.id);
+                          const imgSrc = espnId
+                            ? `https://img1.hscicdn.com/image/upload/f_auto,t_ds_square_w_160,q_auto:low/lsci/db/PICTURES/CMS/316500/${espnId}.png`
+                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1a3a5c&color=D4AF37&bold=true&size=80`;
+                          return (
                             <div
+                              key={p.id}
                               style={{
-                                fontFamily: "Rajdhani, sans-serif",
-                                fontWeight: 700,
-                                fontSize: 15,
-                                color: "#ddeeff",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 12,
+                                padding: "10px 14px",
+                                borderRadius: 10,
+                                marginBottom: 6,
+                                background: "rgba(13,34,64,0.5)",
+                                border: "1px solid #1a3a5c",
                               }}
                             >
-                              {p.name}
-                              {p.isAutoFilled && (
-                                <span
+                              <img
+                                src={imgSrc}
+                                alt=""
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: "50%",
+                                  objectFit: "cover",
+                                  flexShrink: 0,
+                                }}
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src =
+                                    `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1a3a5c&color=D4AF37&bold=true&size=80`;
+                                }}
+                              />
+                              <span style={{ fontSize: 16, flexShrink: 0 }}>
+                                {p.nationality === "Indian" ? "🇮🇳" : "🌏"}
+                              </span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div
                                   style={{
-                                    marginLeft: 6,
-                                    fontSize: 10,
-                                    background: "rgba(255,255,255,0.08)",
-                                    color: "#5a8ab0",
-                                    padding: "1px 7px",
-                                    borderRadius: 20,
+                                    fontFamily: "Rajdhani, sans-serif",
+                                    fontWeight: 700,
+                                    fontSize: 15,
+                                    color: "#ddeeff",
                                   }}
                                 >
-                                  AUTO
-                                </span>
-                              )}
+                                  {p.name}
+                                  {p.isAutoFilled && (
+                                    <span
+                                      style={{
+                                        marginLeft: 6,
+                                        fontSize: 10,
+                                        background: "rgba(255,255,255,0.08)",
+                                        color: "#5a8ab0",
+                                        padding: "1px 7px",
+                                        borderRadius: 20,
+                                      }}
+                                    >
+                                      AUTO
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ color: "#5a8ab0", fontSize: 11 }}>
+                                  {p.stats}
+                                </div>
+                              </div>
+                              <div
+                                style={{ textAlign: "right", flexShrink: 0 }}
+                              >
+                                <div
+                                  style={{
+                                    fontFamily: "Teko, sans-serif",
+                                    fontSize: 18,
+                                    color: "#D4AF37",
+                                    lineHeight: 1,
+                                  }}
+                                >
+                                  {formatCr(p.soldFor)}
+                                </div>
+                                <div style={{ color: "#5a8ab0", fontSize: 10 }}>
+                                  Base {formatCr(p.basePrice)}
+                                </div>
+                              </div>
                             </div>
-                            <div style={{ color: "#5a8ab0", fontSize: 11 }}>
-                              {p.stats}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: "right", flexShrink: 0 }}>
-                            <div
-                              style={{
-                                fontFamily: "Teko, sans-serif",
-                                fontSize: 18,
-                                color: "#D4AF37",
-                                lineHeight: 1,
-                              }}
-                            >
-                              {formatCr(p.soldFor)}
-                            </div>
-                            <div style={{ color: "#5a8ab0", fontSize: 10 }}>
-                              Base {formatCr(p.basePrice)}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-              </>
-            )}
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           </div>
         )}
       </main>
 
-      <div style={{ textAlign: 'center', padding: '40px 20px', color: '#5a8ab0', fontSize: 13, letterSpacing: 1, fontFamily: 'Rajdhani, sans-serif' }}>
+      <div
+        style={{
+          textAlign: "center",
+          padding: "40px 20px",
+          color: "#5a8ab0",
+          fontSize: 13,
+          letterSpacing: 1,
+          fontFamily: "Rajdhani, sans-serif",
+        }}
+      >
         Designed and Developed by Kartik Jain
       </div>
 
-      <LiveChat code={code} user={user} roomState={roomState as RoomState} isOpen={chatOpen} onToggle={() => setChatOpen(o => !o)} />
+      <LiveChat
+        code={code}
+        user={user}
+        roomState={roomState as RoomState}
+        isOpen={chatOpen}
+        onToggle={() => setChatOpen((o) => !o)}
+      />
       <TradeDrawer roomState={roomState as RoomState} user={user} code={code} />
     </div>
   );
