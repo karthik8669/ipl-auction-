@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { ref, set, get, onValue, off } from 'firebase/database'
+import { ref, set, get, update, onValue, off } from 'firebase/database'
 import { auth, db } from '@/lib/firebase'
 
 function generateRoomCode(): string {
@@ -44,6 +44,16 @@ export default function LobbyPage() {
 
   // Public rooms
   const [publicRooms, setPublicRooms] = useState<PublicRoom[]>([])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'auction_started') {
+      setActiveTab('join')
+      setJoinError('❌ Auction already started. You cannot join this room.')
+      window.history.replaceState({}, '', '/lobby')
+    }
+  }, [])
 
 
   useEffect(() => {
@@ -192,21 +202,40 @@ export default function LobbyPage() {
         return
       }
       const data = snap.val()
-      if (data?.meta?.status === 'finished') {
-        setJoinError('This auction has already ended.')
+      const participants = data?.participants || {}
+      const wasParticipant = !!participants[user.uid]
+
+      if (data?.meta?.status === 'auction' && !wasParticipant) {
+        setJoinError('❌ Auction is in progress. New players cannot join.')
         setJoining(false)
         return
       }
-      await set(ref(db, `rooms/${code}/participants/${user.uid}`), {
-        name: user.displayName || 'Player',
-        email: user.email || '',
-        photoURL: user.photoURL || '',
-        budget: 100,
-        overseas: 0,
-        squadSize: 0,
-        isReady: false,
-        joinedAt: Date.now(),
-      })
+
+      if (data?.meta?.status === 'finished') {
+        setJoinError('❌ This auction has already ended.')
+        setJoining(false)
+        return
+      }
+
+      if (wasParticipant) {
+        await update(ref(db, `rooms/${code}/participants/${user.uid}`), {
+          name: user.displayName || 'Player',
+          photoURL: user.photoURL || '',
+          lastSeen: Date.now(),
+        })
+      } else {
+        await set(ref(db, `rooms/${code}/participants/${user.uid}`), {
+          name: user.displayName || 'Player',
+          email: user.email || '',
+          photoURL: user.photoURL || '',
+          budget: 100,
+          overseas: 0,
+          squadSize: 0,
+          isReady: false,
+          joinedAt: Date.now(),
+        })
+      }
+
       if (data?.meta?.status === 'auction') {
         window.location.href = `/room/${code}/auction`
       } else {
@@ -260,7 +289,7 @@ export default function LobbyPage() {
   }
 
   return (
-    <div style={{
+    <div className="page-enter" style={{
       minHeight: '100vh',
       width: '100%',
       background: '#030c18',
@@ -721,10 +750,10 @@ export default function LobbyPage() {
                 fontFamily: 'Teko, sans-serif',
                 fontSize: 22, color: '#5a8ab0',
               }}>
-                No Public Rooms Yet
+                No rooms yet. Be the first to host! 🏟️
               </div>
               <div style={{ color: '#5a8ab0', fontSize: 13, marginTop: 6 }}>
-                Create a public room to let others join!
+                Open your room and get the bidding started.
               </div>
             </div>
           ) : (

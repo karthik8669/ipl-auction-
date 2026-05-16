@@ -91,7 +91,7 @@ export default function LandingPage() {
   }
 
   return (
-    <div style={{
+    <div className="page-enter" style={{
       minHeight: '100vh',
       width: '100%',
       background: '#030c18',

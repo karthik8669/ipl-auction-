@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, off, update } from "firebase/database";
 import { realtimeDb } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { players as ALL_PLAYERS } from "@/data/players";
@@ -19,8 +19,30 @@ type AnalysisResult = {
   summary?: string;
 };
 
+type TeamInsight = {
+  uid: string;
+  name: string;
+  rating?: number;
+  strengths?: string;
+  weaknesses?: string;
+  verdict?: string;
+};
+
+type CombinedAnalysis = {
+  winnerUid?: string;
+  winnerName?: string;
+  winnerReason?: string;
+  summary?: string;
+  teamInsights?: TeamInsight[];
+};
+
 type RoomStateLike = {
   teams?: Record<string, Record<string, { soldFor?: number }>>;
+  participants?: Record<string, any>;
+  franchises?: Record<string, any>;
+  playing11?: Record<string, any>;
+  playing11Analysis?: CombinedAnalysis | string | null;
+  meta?: { status?: string };
 };
 
 export default function Playing11Page({
@@ -40,10 +62,15 @@ export default function Playing11Page({
   const [selected11, setSelected11] = useState<string[]>([]);
   const [captain, setCaptain] = useState<string>("");
   const [viceCaptain, setViceCaptain] = useState<string>("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
     null,
   );
+  const [combinedAnalysis, setCombinedAnalysis] =
+    useState<CombinedAnalysis | null>(null);
+  const [allSubmissions, setAllSubmissions] = useState<any>({});
+  const [waitingForOthers, setWaitingForOthers] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -56,11 +83,48 @@ export default function Playing11Page({
     if (authLoading || !user || !code) return;
     const roomRef = ref(realtimeDb, `rooms/${code}`);
     const unsub = onValue(roomRef, (snap) => {
-      setRoomState((snap.val() as RoomStateLike | null) || null);
+      const data = (snap.val() as RoomStateLike | null) || null;
+      setRoomState(data);
+
+      const storedAnalysis = data?.playing11Analysis;
+      if (storedAnalysis) {
+        if (typeof storedAnalysis === "string") {
+          try {
+            setCombinedAnalysis(JSON.parse(storedAnalysis) as CombinedAnalysis);
+          } catch {
+            // ignore parse error
+          }
+        } else {
+          setCombinedAnalysis(storedAnalysis as CombinedAnalysis);
+        }
+      }
+
       setLoading(false);
     });
     return () => unsub();
   }, [authLoading, code, user]);
+
+  useEffect(() => {
+    if (!roomState || !user) return;
+    const me = roomState?.participants?.[user.uid];
+    if (me?.hasLeft) {
+      window.location.href = "/lobby";
+      return;
+    }
+  }, [roomState, user]);
+
+  useEffect(() => {
+    if (!code) return;
+    const sub11Ref = ref(realtimeDb, `rooms/${code}/playing11`);
+    onValue(sub11Ref, (snap) => {
+      if (snap.exists()) {
+        setAllSubmissions(snap.val());
+      } else {
+        setAllSubmissions({});
+      }
+    });
+    return () => off(sub11Ref);
+  }, [code]);
 
   const mySquad = useMemo(() => {
     if (!roomState || !user) return [];
@@ -187,6 +251,30 @@ export default function Playing11Page({
     captain !== viceCaptain &&
     mySquad.length > 0;
 
+  const activeParticipants = Object.entries(roomState?.participants || {}).filter(
+    ([, p]: any) => !p?.hasLeft,
+  );
+  const totalActive = activeParticipants.length;
+  const submittedCount = activeParticipants.filter(
+    ([uid]) => !!allSubmissions[uid],
+  ).length;
+  const allSubmitted = submittedCount >= totalActive && totalActive > 0;
+  const iSubmitted = !!allSubmissions[user?.uid || ""];
+
+  useEffect(() => {
+    setWaitingForOthers(iSubmitted && !allSubmitted);
+  }, [iSubmitted, allSubmitted]);
+
+  useEffect(() => {
+    if (!user) return;
+    const mySubmission = allSubmissions?.[user.uid];
+    if (!mySubmission) return;
+    if (Array.isArray(mySubmission.players)) setSelected11(mySubmission.players);
+    if (typeof mySubmission.captain === "string") setCaptain(mySubmission.captain);
+    if (typeof mySubmission.viceCaptain === "string")
+      setViceCaptain(mySubmission.viceCaptain);
+  }, [allSubmissions, user]);
+
   const togglePlayer = (id: string) => {
     const player = mySquad.find((p) => p?.id === id);
 
@@ -204,37 +292,134 @@ export default function Playing11Page({
     setSelected11((prev) => [...prev, id]);
   };
 
-  const handleAnalyze = async () => {
+  const handleSubmitPlaying11 = async () => {
     if (!isValid) return;
-    setIsAnalyzing(true);
-    setAnalysisResult(null);
-
-    const xiPlayers = selectedPlayers;
+    if (!user) return;
+    setSubmitting(true);
 
     try {
+      await update(ref(realtimeDb), {
+        [`rooms/${code}/playing11/${user.uid}`]: {
+          players: selected11,
+          captain,
+          viceCaptain,
+          submittedAt: Date.now(),
+        },
+      });
+      setWaitingForOthers(true);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to submit playing 11.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  async function analyzeTeam() {
+    if (!roomState || !user) return;
+    setAnalyzing(true);
+
+    try {
+      const existingAnalysis = roomState?.playing11Analysis;
+      if (existingAnalysis) {
+        const parsed =
+          typeof existingAnalysis === "string"
+            ? (JSON.parse(existingAnalysis) as CombinedAnalysis)
+            : (existingAnalysis as CombinedAnalysis);
+        setCombinedAnalysis(parsed);
+        const myInsight = (parsed?.teamInsights || []).find(
+          (insight) => insight.uid === user.uid,
+        );
+        if (myInsight) {
+          setAnalysisResult({
+            rating: myInsight.rating,
+            strengths: myInsight.strengths,
+            weaknesses: myInsight.weaknesses,
+            summary: myInsight.verdict,
+          });
+        }
+        return;
+      }
+
+      const teamsPayload = activeParticipants
+        .map(([uid, p]: any) => {
+          const sub = allSubmissions?.[uid];
+          if (!sub || !Array.isArray(sub.players)) return null;
+
+          const players = sub.players
+            .map((id: string) => ALL_PLAYERS.find((pl) => pl.id === id))
+            .filter(Boolean);
+
+          const capPlayer = ALL_PLAYERS.find((pl) => pl.id === sub.captain);
+          const vcPlayer = ALL_PLAYERS.find((pl) => pl.id === sub.viceCaptain);
+
+          return {
+            uid,
+            name: roomState?.franchises?.[uid]?.name || p?.name || "Team",
+            players,
+            captain: capPlayer?.name || "",
+            viceCaptain: vcPlayer?.name || "",
+          };
+        })
+        .filter(
+          (team): team is {
+            uid: string;
+            name: string;
+            players: any[];
+            captain: string;
+            viceCaptain: string;
+          } => Boolean(team),
+        );
+
+      if (!teamsPayload.length) {
+        setAnalyzing(false);
+        return;
+      }
+
       const res = await fetch("/api/analyze-playing11", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          players: xiPlayers,
-          captain: captainName,
-          viceCaptain: vcName,
-        }),
+        body: JSON.stringify({ teams: teamsPayload }),
       });
 
       const data = await res.json();
-      if (data.success) {
-        setAnalysisResult(data.analysis || null);
+      if (data.success && data.analysis) {
+        const analysis = data.analysis as CombinedAnalysis;
+        setCombinedAnalysis(analysis);
+
+        const myInsight = (analysis.teamInsights || []).find(
+          (insight) => insight.uid === user.uid,
+        );
+        if (myInsight) {
+          setAnalysisResult({
+            rating: myInsight.rating,
+            strengths: myInsight.strengths,
+            weaknesses: myInsight.weaknesses,
+            summary: myInsight.verdict || analysis.summary,
+          });
+        }
+
+        await update(ref(realtimeDb), {
+          [`rooms/${code}/playing11Analysis`]: analysis,
+        });
       } else {
-        alert("Analysis failed. Try again.");
+        alert("Combined analysis failed. Try again.");
       }
     } catch (error) {
       console.error(error);
       alert("Error reaching AI API");
     } finally {
-      setIsAnalyzing(false);
+      setAnalyzing(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    if (!allSubmitted) return;
+    if (!iSubmitted) return;
+    if (combinedAnalysis) return;
+    if (analyzing) return;
+    analyzeTeam();
+  }, [allSubmitted, iSubmitted, combinedAnalysis, analyzing]);
 
   const roleEmoji = (role: string) => {
     if (role === "WK-Batsman") return "🧤";
@@ -288,6 +473,7 @@ export default function Playing11Page({
 
   return (
     <div
+      className="page-enter"
       style={{
         minHeight: "100vh",
         background: "#030c18",
@@ -819,8 +1005,8 @@ export default function Playing11Page({
         </div>
 
         <button
-          onClick={handleAnalyze}
-          disabled={!isValid || isAnalyzing}
+          onClick={handleSubmitPlaying11}
+          disabled={!isValid || submitting || analyzing}
           style={{
             width: "100%",
             padding: isMobile ? "16px" : "18px",
@@ -834,12 +1020,17 @@ export default function Playing11Page({
             fontWeight: 700,
             fontSize: isMobile ? "18px" : "22px",
             letterSpacing: 1,
-            cursor: isValid && !isAnalyzing ? "pointer" : "not-allowed",
+            cursor:
+              isValid && !submitting && !analyzing ? "pointer" : "not-allowed",
             boxShadow: isValid ? "0 8px 28px rgba(212,175,55,0.45)" : "none",
           }}
         >
-          {isAnalyzing
-            ? "⏳ Submitting..."
+          {submitting
+            ? "⏳ SUBMITTING..."
+            : iSubmitted && !allSubmitted
+              ? `✅ Submitted (${submittedCount}/${totalActive})`
+              : analyzing
+                ? "🤖 ANALYZING ALL TEAMS..."
             : !hasWK
               ? "⚠️ Add at least 1 Wicket Keeper"
               : selected11.length < 11
@@ -850,10 +1041,10 @@ export default function Playing11Page({
                     ? "👑 Select a Captain first"
                     : !viceCaptain
                       ? "🥈 Select a Vice Captain"
-                      : "🚀 SUBMIT & GET AI ANALYSIS"}
+                      : "🚀 SUBMIT PLAYING 11"}
         </button>
 
-        {isAnalyzing && (
+        {analyzing && (
           <div
             style={{
               padding: "28px 20px",
@@ -883,7 +1074,7 @@ export default function Playing11Page({
                 marginBottom: 8,
               }}
             >
-              🤖 AI IS ANALYZING...
+                🤖 AI IS ANALYZING ALL PLAYING 11s...
             </div>
             <div
               style={{
@@ -892,9 +1083,9 @@ export default function Playing11Page({
                 lineHeight: 1.6,
               }}
             >
-              Evaluating your team balance,
+                Comparing all submitted squads,
               <br />
-              captain choice and squad strength
+                captain choices and team strength
             </div>
             <div
               style={{
@@ -917,6 +1108,113 @@ export default function Playing11Page({
                 />
               ))}
             </div>
+          </div>
+        )}
+
+        {combinedAnalysis && (
+          <div
+            style={{
+              background: "rgba(7,24,44,0.95)",
+              borderRadius: 16,
+              padding: isMobile ? "14px 12px" : "20px 18px",
+              border: "1px solid rgba(212,175,55,0.25)",
+              color: "#ddeeff",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "Teko, sans-serif",
+                fontSize: isMobile ? 24 : 30,
+                color: "#D4AF37",
+                letterSpacing: 2,
+              }}
+            >
+              🏆 Combined AI Analysis
+            </div>
+
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "rgba(212,175,55,0.08)",
+                border: "1px solid rgba(212,175,55,0.2)",
+              }}
+            >
+              <div
+                style={{
+                  color: "#5a8ab0",
+                  fontSize: 11,
+                  letterSpacing: 2,
+                  textTransform: "uppercase",
+                  marginBottom: 4,
+                }}
+              >
+                Best XI Combination
+              </div>
+              <div
+                style={{
+                  fontFamily: "Teko, sans-serif",
+                  fontSize: isMobile ? 30 : 36,
+                  color: "#D4AF37",
+                  lineHeight: 1,
+                }}
+              >
+                {combinedAnalysis?.winnerName || "Awaiting result"}
+              </div>
+              <div style={{ color: "#ddeeff", fontSize: 13, marginTop: 6 }}>
+                {combinedAnalysis?.winnerReason || combinedAnalysis?.summary || ""}
+              </div>
+            </div>
+
+            {!!combinedAnalysis?.teamInsights?.length && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(combinedAnalysis.teamInsights || []).map((insight) => (
+                  <div
+                    key={insight.uid}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      background: "rgba(13,34,64,0.5)",
+                      border: "1px solid #1a3a5c",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontFamily: "Rajdhani, sans-serif",
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: "#ddeeff",
+                        }}
+                      >
+                        {insight.name}
+                        {insight.uid === user?.uid ? " (You)" : ""}
+                      </div>
+                      <div style={{ color: "#5a8ab0", fontSize: 12 }}>
+                        {insight.verdict || "Strong lineup"}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "Teko, sans-serif",
+                        fontSize: 24,
+                        color: "#D4AF37",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {Number(insight.rating || 0).toFixed(1)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1165,6 +1463,185 @@ export default function Playing11Page({
           </div>
         )}
       </div>
+
+      {waitingForOthers && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "#030c18",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 72,
+              marginBottom: 24,
+              animation: "float 2s ease-in-out infinite",
+            }}
+          >
+            🏏
+          </div>
+
+          <div
+            style={{
+              fontFamily: "Teko, sans-serif",
+              fontSize: 32,
+              color: "#D4AF37",
+              letterSpacing: 3,
+              marginBottom: 8,
+              textAlign: "center",
+            }}
+          >
+            PLAYING 11 SUBMITTED!
+          </div>
+
+          <div
+            style={{
+              color: "#5a8ab0",
+              fontSize: 15,
+              marginBottom: 32,
+              textAlign: "center",
+              lineHeight: 1.6,
+            }}
+          >
+            Waiting for other players to
+            <br />
+            submit their playing 11...
+          </div>
+
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 300,
+              background: "rgba(7,24,44,0.9)",
+              border: "1px solid #1a3a5c",
+              borderRadius: 16,
+              padding: "20px",
+              marginBottom: 24,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 12,
+              }}
+            >
+              <span
+                style={{
+                  color: "#5a8ab0",
+                  fontSize: 12,
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 600,
+                  letterSpacing: 2,
+                  textTransform: "uppercase",
+                }}
+              >
+                Submitted
+              </span>
+              <span
+                style={{
+                  fontFamily: "Teko, sans-serif",
+                  fontSize: 22,
+                  color: "#D4AF37",
+                }}
+              >
+                {submittedCount}/{totalActive}
+              </span>
+            </div>
+
+            <div
+              style={{
+                height: 8,
+                borderRadius: 4,
+                background: "rgba(255,255,255,0.06)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  borderRadius: 4,
+                  background: "linear-gradient(90deg, #D4AF37, #f5d76e)",
+                  width: `${totalActive > 0 ? (submittedCount / totalActive) * 100 : 0}%`,
+                  transition: "width 0.5s ease",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {activeParticipants.map(([uid, p]: any) => {
+                const hasSubmitted = !!allSubmissions[uid];
+                const franchise = roomState?.franchises?.[uid];
+                return (
+                  <div
+                    key={uid}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <img
+                      src={p.photoURL || ""}
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: "50%",
+                        border: `1px solid ${hasSubmitted ? "#00c896" : "#1a3a5c"}`,
+                        objectFit: "cover",
+                      }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1a3a5c&color=D4AF37&bold=true`;
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 600,
+                        fontSize: 14,
+                        color: hasSubmitted ? "#00c896" : "#5a8ab0",
+                        flex: 1,
+                      }}
+                    >
+                      {franchise?.name || p.name}
+                      {uid === user?.uid ? " (You)" : ""}
+                    </span>
+                    <span style={{ fontSize: 16 }}>
+                      {hasSubmitted ? "✅" : "⏳"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            style={{
+              color: "#5a8ab0",
+              fontSize: 12,
+              fontStyle: "italic",
+              textAlign: "center",
+            }}
+          >
+            AI will analyze all teams once everyone submits
+          </div>
+        </div>
+      )}
     </div>
   );
 }

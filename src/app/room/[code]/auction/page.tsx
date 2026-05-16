@@ -3,14 +3,14 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoom } from "@/hooks/useRoom";
 import { useAuction } from "@/hooks/useAuction";
 import { useTimer } from "@/hooks/useTimer";
 import { players as ALL_PLAYERS, getEspnId } from "@/data/players";
-import { ref, push, update } from "firebase/database";
+import { ref, push, update, get, set } from "firebase/database";
 import { realtimeDb as db } from "@/lib/firebase";
 import { CircularTimer } from "@/components/auction/CircularTimer";
 import { AudioControls } from "@/components/shared/AudioControls";
@@ -92,7 +92,9 @@ function PlayerAvatar({ player, size = 100 }: PlayerAvatarProps) {
     },
   };
 
-  const rc = roleConfig[player?.role] || roleConfig["Batsman"];
+  const rc = player?.role
+    ? roleConfig[player.role] || roleConfig["Batsman"]
+    : roleConfig["Batsman"];
 
   if (!player?.id || imgError) {
     return (
@@ -138,11 +140,10 @@ function PlayerAvatar({ player, size = 100 }: PlayerAvatarProps) {
 export default function AuctionPage() {
   const { user, loading: authLoading } = useAuth();
   const params = useParams();
-  const router = useRouter();
   const code = String(params.code || "")
     .trim()
     .toUpperCase();
-  const { currentRoom, roomCode, joinRoom, setRoomCode, leaveRoom } = useRoom();
+  const { currentRoom, roomCode, setRoomCode } = useRoom();
   const {
     auction,
     currentPlayer: hookCurrentPlayer,
@@ -155,6 +156,13 @@ export default function AuctionPage() {
   const { seconds } = useTimer(auction?.timerEnd ?? 0);
   const [isMobile, setIsMobile] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(900);
+  const [showLeaveWarning, setShowLeaveWarning] = useState(false);
+  const [bidFlash, setBidFlash] = useState(false);
+  const [playerVisible, setPlayerVisible] = useState(true);
+  const [bidFeedback, setBidFeedback] = useState<{
+    show: boolean;
+    isMe: boolean;
+  }>({ show: false, isMe: false });
 
   useEffect(() => {
     const check = () => {
@@ -171,6 +179,7 @@ export default function AuctionPage() {
   const prevBidCountRef = useRef(0);
   const prevBudgetRef = useRef<number>(100);
   const prevPlayerIdRef = useRef<string | null>(null);
+  const prevBidRef = useRef(0);
 
   const participants = currentRoom?.participants || {};
   const isHost = (currentRoom?.meta?.hostId || "") === user?.uid;
@@ -269,6 +278,9 @@ export default function AuctionPage() {
   const mobileTimerRadius = isShortMobile ? 30 : 34;
   const mobileTimerCirc = Math.PI * 2 * mobileTimerRadius;
   const leaderPhoto = leaderId ? participants[leaderId]?.photoURL || "" : "";
+  const winnerFranchise = leaderId ? currentRoom?.franchises?.[leaderId] || {} : {};
+  const winnerColor =
+    (winnerFranchise as { color?: string })?.color || "#D4AF37";
 
   const roleConfig: Record<
     string,
@@ -316,10 +328,18 @@ export default function AuctionPage() {
   };
   const rc = roleConfig[currentPlayer?.role || "Batsman"] || roleConfig.Batsman;
 
-  const handleLeave = useCallback(async () => {
-    await leaveRoom();
-    router.push("/lobby");
-  }, [leaveRoom, router]);
+  function handleLeaveAuction() {
+    const myTeam = currentRoom?.teams?.[user?.uid || ""] || {};
+    const myPlayers = Object.keys(myTeam).length;
+    const myBudgetNow = me?.budget ?? 100;
+    const hasSpentMoney = myBudgetNow < 100 || myPlayers > 0;
+
+    if (hasSpentMoney) {
+      setShowLeaveWarning(true);
+    } else {
+      window.location.href = "/lobby";
+    }
+  }
 
   const handlePlaceBid = useCallback(async () => {
     if (bidButtonDisabled) return;
@@ -507,18 +527,75 @@ export default function AuctionPage() {
   );
 
   useEffect(() => {
-    if (code) {
-      setRoomCode(code);
-      joinRoom(code);
-    }
-  }, [code, joinRoom, setRoomCode]);
+    if (!code || !user) return;
 
-  useEffect(() => {
-    if (currentRoom?.meta?.status === "finished") {
-      audioManager.stopMusic();
-      router.push(`/room/${code}/results`);
-    }
-  }, [code, currentRoom?.meta?.status, router]);
+    const checkAndJoin = async () => {
+      try {
+        const roomRef = ref(db, `rooms/${code}`);
+        const roomSnap = await get(roomRef);
+        if (!roomSnap.exists()) {
+          window.location.href = "/lobby";
+          return;
+        }
+
+        const room = roomSnap.val() as RoomState & {
+          meta?: RoomState["meta"] & {
+            lockedParticipants?: string[];
+          };
+        };
+        const status = room?.meta?.status;
+        const lockedParticipants = Array.isArray(room?.meta?.lockedParticipants)
+          ? room.meta.lockedParticipants
+          : [];
+        const hasLockedList = lockedParticipants.length > 0;
+        const isLockedParticipant = lockedParticipants.includes(user.uid);
+
+        if (status === "auction" && hasLockedList && !isLockedParticipant) {
+          window.location.href = "/lobby?error=auction_started";
+          return;
+        }
+
+        const participantRef = ref(db, `rooms/${code}/participants/${user.uid}`);
+        const partSnap = await get(participantRef);
+
+        if (partSnap.exists()) {
+          await update(participantRef, {
+            name: user.displayName || "Player",
+            photoURL: user.photoURL || "",
+            lastSeen: Date.now(),
+          });
+          setRoomCode(code);
+          return;
+        }
+
+        if (status === "waiting") {
+          await set(participantRef, {
+            name: user.displayName || "Player",
+            email: user.email || "",
+            photoURL: user.photoURL || "",
+            budget: 100,
+            overseas: 0,
+            squadSize: 0,
+            isReady: false,
+            joinedAt: Date.now(),
+          });
+          setRoomCode(code);
+          return;
+        }
+
+        if (status === "auction") {
+          window.location.href = "/lobby?error=auction_started";
+          return;
+        }
+
+        window.location.href = "/lobby";
+      } catch (err) {
+        console.error("Failed to join auction room:", err);
+      }
+    };
+
+    checkAndJoin();
+  }, [code, user, setRoomCode]);
 
   useEffect(() => {
     const startMusic = () => {
@@ -595,6 +672,35 @@ export default function AuctionPage() {
   }, [bidHistory, user?.uid]);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    if (currentBid > prevBidRef.current && prevBidRef.current > 0) {
+      setBidFlash(true);
+      timeoutId = setTimeout(() => setBidFlash(false), 600);
+    }
+    prevBidRef.current = currentBid;
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [currentBid]);
+
+  useEffect(() => {
+    setPlayerVisible(false);
+    const timeoutId = setTimeout(() => setPlayerVisible(true), 300);
+    return () => clearTimeout(timeoutId);
+  }, [currentIndex]);
+
+  useEffect(() => {
+    if (bidHistory.length === 0) return;
+    const latest = bidHistory[0];
+    setBidFeedback({ show: true, isMe: latest.userId === user?.uid });
+    const timeoutId = setTimeout(
+      () => setBidFeedback({ show: false, isMe: false }),
+      1000,
+    );
+    return () => clearTimeout(timeoutId);
+  }, [bidHistory, user?.uid]);
+
+  useEffect(() => {
     if (phase !== "bidding") return;
     if (seconds <= 3 && seconds > 0 && seconds !== prevSec.current) {
       audioManager.playTimerCritical();
@@ -607,11 +713,17 @@ export default function AuctionPage() {
   useEffect(() => {
     const status = currentRoom?.meta?.status;
     if (!status) return;
-    // Only redirect FORWARD to playing11 — never back to waiting room
+    if (!user?.uid) return;
     if (status === "finished") {
-      window.location.replace(`/room/${code}/playing11`);
+      audioManager.stopMusic();
+      const meState = currentRoom?.participants?.[user.uid];
+      if (meState?.hasLeft) {
+        window.location.href = "/lobby";
+      } else {
+        window.location.href = `/room/${code}/playing11`;
+      }
     }
-  }, [currentRoom?.meta?.status, code]);
+  }, [currentRoom?.meta?.status, currentRoom?.participants, user?.uid, code]);
 
   // Auth redirect — must be in useEffect, never in render body
   useEffect(() => {
@@ -787,11 +899,14 @@ export default function AuctionPage() {
 
       {/* ─── WRAPPER ─── */}
       <div
+        className="page-enter"
         style={{
           display: "flex",
           flexDirection: "column",
           height: "100vh",
           overflow: "hidden",
+          userSelect: "none",
+          WebkitUserSelect: "none",
           background: "#030c18",
           backgroundImage: `radial-gradient(ellipse at 20% 20%, rgba(0,65,120,0.25) 0%, transparent 50%),
                           radial-gradient(ellipse at 80% 80%, rgba(212,175,55,0.08) 0%, transparent 50%)`,
@@ -914,9 +1029,7 @@ export default function AuctionPage() {
               </button>
 
               <button
-                onClick={() => {
-                  window.location.href = "/lobby";
-                }}
+                onClick={handleLeaveAuction}
                 style={{
                   padding: "5px 8px",
                   borderRadius: 8,
@@ -958,6 +1071,9 @@ export default function AuctionPage() {
                   background: "#07182c",
                   position: "relative",
                   flexShrink: 0,
+                  opacity: playerVisible ? 1 : 0,
+                  transform: playerVisible ? "translateY(0)" : "translateY(10px)",
+                  transition: "opacity 0.3s ease, transform 0.3s ease",
                 }}
               >
                 <div
@@ -1143,7 +1259,7 @@ export default function AuctionPage() {
                   flexShrink: 0,
                 }}
               >
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, position: "relative" }}>
                   <div
                     style={{
                       color: "#5a8ab0",
@@ -1164,12 +1280,31 @@ export default function AuctionPage() {
                       color: "#D4AF37",
                       lineHeight: 1,
                       filter: "drop-shadow(0 0 12px rgba(212,175,55,0.4))",
+                      animation: bidFlash ? "goldPulse 0.6s ease-out" : "none",
                     }}
                   >
                     {currentBid > 0
                       ? formatCr(currentBid)
                       : formatCr(currentPlayer?.basePrice ?? 0)}
                   </div>
+                  {bidFeedback.show && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: -20,
+                        right: 0,
+                        fontFamily: "Teko, sans-serif",
+                        fontSize: 18,
+                        fontWeight: 700,
+                        color: bidFeedback.isMe ? "#00c896" : "#ff4060",
+                        animation: "fadeInUp 0.8s ease-out forwards",
+                        pointerEvents: "none",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {bidFeedback.isMe ? "+Your Bid!" : "+Outbid!"}
+                    </div>
+                  )}
                   {leaderId ? (
                     <div
                       style={{
@@ -1215,7 +1350,7 @@ export default function AuctionPage() {
                         fontStyle: "italic",
                       }}
                     >
-                      No bids yet - be the first! 🔥
+                      Silence... 🦗 Be the first to bid!
                     </div>
                   )}
                 </div>
@@ -1365,6 +1500,26 @@ export default function AuctionPage() {
               <button
                 onClick={handlePlaceBid}
                 disabled={bidButtonDisabled}
+                onMouseEnter={(e) => {
+                  if (!bidButtonDisabled) {
+                    e.currentTarget.style.transform = "scale(1.02)";
+                    e.currentTarget.style.boxShadow =
+                      "0 8px 32px rgba(212,175,55,0.6)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "scale(1)";
+                  e.currentTarget.style.boxShadow =
+                    "0 6px 28px rgba(212,175,55,0.5)";
+                }}
+                onTouchStart={(e) => {
+                  if (!bidButtonDisabled) {
+                    e.currentTarget.style.transform = "scale(0.97)";
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = "scale(1)";
+                }}
                 style={{
                   width: "100%",
                   padding: isShortMobile ? "16px 14px" : "20px 16px",
@@ -1624,7 +1779,7 @@ export default function AuctionPage() {
                       fontStyle: "italic",
                     }}
                   >
-                    No bids yet
+                    Silence... 🦗 Be the first to bid!
                   </div>
                 ) : (
                   bidHistory.slice(0, 4).map((bid: BidEntry, i: number) => (
@@ -1900,7 +2055,7 @@ export default function AuctionPage() {
                 </button>
                 {/* Leave */}
                 <button
-                  onClick={handleLeave}
+                  onClick={handleLeaveAuction}
                   style={{
                     padding: "8px 14px",
                     borderRadius: 8,
@@ -1914,7 +2069,7 @@ export default function AuctionPage() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  ← Leave
+                  ✕ Leave
                 </button>
               </div>
             </nav>
@@ -1943,6 +2098,9 @@ export default function AuctionPage() {
                   border: `1px solid ${rc.color}55`,
                   boxShadow: `0 10px 30px ${rc.glow}`,
                   background: `linear-gradient(145deg, ${rc.glow} 0%, rgba(7,24,44,0.92) 46%, rgba(7,24,44,0.85) 100%)`,
+                  opacity: playerVisible ? 1 : 0,
+                  transform: playerVisible ? "translateY(0)" : "translateY(10px)",
+                  transition: "opacity 0.3s ease, transform 0.3s ease",
                 }}
               >
                 {/* Role + Nationality badges */}
@@ -2186,7 +2344,7 @@ export default function AuctionPage() {
                     flexShrink: 0,
                   }}
                 >
-                  <div>
+                  <div style={{ position: "relative" }}>
                     <div
                       style={{
                         color: "#5a8ab0",
@@ -2210,12 +2368,31 @@ export default function AuctionPage() {
                         WebkitTextFillColor: "transparent",
                         backgroundClip: "text",
                         filter: "drop-shadow(0 0 20px rgba(212,175,55,0.35))",
+                        animation: bidFlash ? "goldPulse 0.6s ease-out" : "none",
                       }}
                     >
                       {currentBid > 0
                         ? formatCr(currentBid)
                         : formatCr(currentPlayer?.basePrice ?? 0)}
                     </div>
+                    {bidFeedback.show && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: -20,
+                          right: 0,
+                          fontFamily: "Teko, sans-serif",
+                          fontSize: 18,
+                          fontWeight: 700,
+                          color: bidFeedback.isMe ? "#00c896" : "#ff4060",
+                          animation: "fadeInUp 0.8s ease-out forwards",
+                          pointerEvents: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {bidFeedback.isMe ? "+Your Bid!" : "+Outbid!"}
+                      </div>
+                    )}
                     {leaderId ? (
                       <div
                         style={{
@@ -2277,7 +2454,7 @@ export default function AuctionPage() {
                           fontStyle: "italic",
                         }}
                       >
-                        No bids yet — be the first!
+                        Silence... 🦗 Be the first to bid!
                       </div>
                     )}
                   </div>
@@ -2369,6 +2546,26 @@ export default function AuctionPage() {
                   <button
                     onClick={handlePlaceBid}
                     disabled={bidButtonDisabled}
+                    onMouseEnter={(e) => {
+                      if (!bidButtonDisabled) {
+                        e.currentTarget.style.transform = "scale(1.02)";
+                        e.currentTarget.style.boxShadow =
+                          "0 8px 32px rgba(212,175,55,0.6)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "scale(1)";
+                      e.currentTarget.style.boxShadow =
+                        "0 6px 28px rgba(212,175,55,0.5)";
+                    }}
+                    onTouchStart={(e) => {
+                      if (!bidButtonDisabled) {
+                        e.currentTarget.style.transform = "scale(0.97)";
+                      }
+                    }}
+                    onTouchEnd={(e) => {
+                      e.currentTarget.style.transform = "scale(1)";
+                    }}
                     style={{
                       width: "100%",
                       padding: "20px",
@@ -2658,7 +2855,7 @@ export default function AuctionPage() {
                           fontStyle: "italic",
                         }}
                       >
-                        Be the first to bid!
+                        Silence... 🦗 Be the first to bid!
                       </div>
                     ) : (
                       displayHistory.map((bid: BidEntry, i: number) => (
@@ -2776,13 +2973,168 @@ export default function AuctionPage() {
       </div>
       {/* end WRAPPER */}
 
+      {showLeaveWarning && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 500,
+            background: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              background: "#07182c",
+              border: "1px solid rgba(255,64,96,0.4)",
+              borderRadius: 20,
+              padding: "28px 24px",
+              maxWidth: 380,
+              width: "100%",
+              textAlign: "center",
+              animation: "fadeInUp 0.25s ease-out",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
+            }}
+          >
+            <div style={{ fontSize: 56, marginBottom: 12 }}>⚠️</div>
+
+            <div
+              style={{
+                fontFamily: "Teko, sans-serif",
+                fontSize: 28,
+                color: "#ff4060",
+                letterSpacing: 2,
+                marginBottom: 12,
+              }}
+            >
+              LEAVING AUCTION
+            </div>
+
+            <div
+              style={{
+                color: "#ddeeff",
+                fontSize: 15,
+                lineHeight: 1.7,
+                marginBottom: 8,
+              }}
+            >
+              You have already bought{" "}
+              <span style={{ color: "#D4AF37", fontWeight: 700 }}>
+                {Object.keys(currentRoom?.teams?.[user?.uid || ""] || {}).length} players
+              </span>
+              {" "}and spent{" "}
+              <span style={{ color: "#ff4060", fontWeight: 700 }}>
+                {formatCr(100 - (me?.budget ?? 100))}
+              </span>
+              .
+            </div>
+
+            <div
+              style={{
+                padding: "12px 16px",
+                background: "rgba(255,64,96,0.08)",
+                border: "1px solid rgba(255,64,96,0.25)",
+                borderRadius: 12,
+                marginBottom: 20,
+              }}
+            >
+              <div
+                style={{
+                  color: "#ff4060",
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  marginBottom: 6,
+                }}
+              >
+                🚫 YOU CANNOT REJOIN THIS AUCTION
+              </div>
+              <div
+                style={{
+                  color: "#5a8ab0",
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                Once you leave, your slot is locked.<br />
+                Your purchased players will remain<br />
+                but you won&apos;t be able to bid anymore.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button
+                onClick={() => setShowLeaveWarning(false)}
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  borderRadius: 12,
+                  border: "none",
+                  backgroundImage: "linear-gradient(135deg, #D4AF37, #f5d76e)",
+                  color: "#111",
+                  fontFamily: "Teko, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 20,
+                  letterSpacing: 2,
+                  cursor: "pointer",
+                  boxShadow: "0 4px 16px rgba(212,175,55,0.4)",
+                }}
+              >
+                ✅ STAY IN AUCTION
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowLeaveWarning(false);
+                  const markLeft = async () => {
+                    try {
+                      if (!user?.uid) return;
+                      const { update: fbUpdate } = await import(
+                        "firebase/database"
+                      );
+                      await fbUpdate(ref(db), {
+                        [`rooms/${code}/participants/${user.uid}/hasLeft`]: true,
+                        [`rooms/${code}/participants/${user.uid}/leftAt`]:
+                          Date.now(),
+                      });
+                    } finally {
+                      window.location.href = "/lobby";
+                    }
+                  };
+                  void markLeft();
+                }}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,64,96,0.3)",
+                  background: "rgba(255,64,96,0.08)",
+                  color: "#ff4060",
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                }}
+              >
+                Leave Anyway (Cannot Rejoin)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {phase === "sold" && (
         <div
           style={{
             position: "fixed",
             inset: 0,
             zIndex: 100,
-            background: "rgba(0,0,0,0.92)",
+            background: `radial-gradient(ellipse at center, ${winnerColor}15 0%, rgba(0,0,0,0.92) 70%)`,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -2803,7 +3155,7 @@ export default function AuctionPage() {
             style={{
               fontFamily: "Teko, sans-serif",
               fontSize: 72,
-              color: "#D4AF37",
+              color: winnerColor,
               letterSpacing: 8,
               lineHeight: 1,
               textShadow: "0 0 40px rgba(212,175,55,0.6)",
@@ -2968,9 +3320,8 @@ export default function AuctionPage() {
                   }}
                 >
                   <div style={{ fontSize: 36, marginBottom: 8 }}>🏏</div>
-                  <div style={{ fontSize: 13 }}>No players yet</div>
-                  <div style={{ fontSize: 11, marginTop: 4 }}>
-                    Start bidding!
+                  <div style={{ fontSize: 13 }}>
+                    No players yet. Time to open your wallet! 💸
                   </div>
                 </div>
               ) : (

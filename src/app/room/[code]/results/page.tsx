@@ -371,9 +371,13 @@ export default function ResultsPage({
   const currentTab = selectedTab || teamsData[0]?.uid || "";
   const selectedTeam = teamsData.find((t) => t.uid === currentTab);
   const unsoldCount = toArray<string>(roomState?.unsoldPlayers).length;
+  const playing11Data = (roomState as any)?.playing11 || {};
+  const playing11Count = Object.keys(playing11Data).length;
+  const totalParticipants = Object.keys(roomState?.participants || {}).length;
 
   return (
     <div
+      className="page-enter"
       style={{
         minHeight: "100vh",
         background: "#030c18",
@@ -656,6 +660,144 @@ export default function ResultsPage({
             Unsold players: {unsoldCount}
           </div>
         </div>
+
+        {playing11Count > 0 && (
+          <div
+            style={{
+              background: "rgba(7,24,44,0.8)",
+              border: "1px solid #1a3a5c",
+              borderRadius: 16,
+              padding: "20px",
+              marginBottom: 20,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "Teko, sans-serif",
+                fontSize: 24,
+                color: "#D4AF37",
+                letterSpacing: 2,
+                marginBottom: 16,
+              }}
+            >
+              🏏 PLAYING 11s ({playing11Count}/{totalParticipants} submitted)
+            </div>
+
+            {Object.entries(playing11Data).map(([uid, data]: any) => {
+              const p = roomState?.participants?.[uid];
+              const franchise = roomState?.franchises?.[uid];
+              const captainPlayer = ALL_PLAYERS.find(
+                (pl) => pl.id === data.captain,
+              );
+              const vcPlayer = ALL_PLAYERS.find(
+                (pl) => pl.id === data.viceCaptain,
+              );
+              const players = (data.players || [])
+                .map((id: string) => ALL_PLAYERS.find((pl) => pl.id === id))
+                .filter(Boolean);
+
+              return (
+                <div
+                  key={uid}
+                  style={{
+                    padding: "14px 16px",
+                    background: "rgba(13,34,64,0.5)",
+                    border: "1px solid #1a3a5c",
+                    borderRadius: 12,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <img
+                      src={p?.photoURL || ""}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "50%",
+                        border: "1px solid #1a3a5c",
+                        objectFit: "cover",
+                      }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          `https://ui-avatars.com/api/?name=${encodeURIComponent(p?.name || "?")}&background=1a3a5c&color=D4AF37&bold=true`;
+                      }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          fontFamily: "Rajdhani, sans-serif",
+                          fontWeight: 700,
+                          fontSize: 15,
+                          color: "#ddeeff",
+                        }}
+                      >
+                        {franchise?.name || p?.name}
+                      </div>
+                      <div style={{ color: "#5a8ab0", fontSize: 11 }}>
+                        {captainPlayer && `C: ${captainPlayer.name}`}
+                        {vcPlayer && ` · VC: ${vcPlayer.name}`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                    }}
+                  >
+                    {players.map((pl: any) => (
+                      <span
+                        key={pl.id}
+                        style={{
+                          padding: "3px 10px",
+                          borderRadius: 20,
+                          background:
+                            pl.id === data.captain
+                              ? "rgba(212,175,55,0.2)"
+                              : pl.id === data.viceCaptain
+                                ? "rgba(77,166,255,0.15)"
+                                : "rgba(255,255,255,0.05)",
+                          border: `1px solid ${
+                            pl.id === data.captain
+                              ? "rgba(212,175,55,0.4)"
+                              : pl.id === data.viceCaptain
+                                ? "rgba(77,166,255,0.3)"
+                                : "rgba(255,255,255,0.08)"
+                          }`,
+                          color:
+                            pl.id === data.captain
+                              ? "#D4AF37"
+                              : pl.id === data.viceCaptain
+                                ? "#4da6ff"
+                                : "#ddeeff",
+                          fontSize: 11,
+                          fontFamily: "Rajdhani, sans-serif",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {pl.id === data.captain
+                          ? "👑 "
+                          : pl.id === data.viceCaptain
+                            ? "🥈 "
+                            : ""}
+                        {pl.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Auction Stats */}
         <AuctionStats roomState={roomState as RoomState} />

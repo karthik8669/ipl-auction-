@@ -21,6 +21,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+body {
+  overscroll-behavior: none;
+}
+
+@media (pointer: coarse) {
+  button {
+    min-height: 44px;
+  }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -68,6 +78,15 @@ body {
   to   { opacity: 1; transform: scale(1); }
 }
 
+@keyframes pageSlideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.page-enter {
+  animation: pageSlideIn 0.4s ease-out;
+}
+
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: #030c18; }
 ::-webkit-scrollbar-thumb { background: #1a3a5c; border-radius: 3px; }
@@ -102,6 +121,10 @@ body {
 
   body {
     overflow-x: hidden;
+  }
+
+  button {
+    min-height: 44px;
   }
 
   canvas {

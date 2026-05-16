@@ -23,7 +23,9 @@ export function MySquadPanel({
       <p className="font-display text-3xl text-gold">{formatCr(budget)}</p>
       <p className="text-xs text-muted">Slots: {squadSize}/20 | Overseas: {overseas}/8</p>
       <div className="mt-3 max-h-96 space-y-1 overflow-y-auto text-sm">
-        {roster.length === 0 && <p className="text-muted">No players yet - start bidding!</p>}
+        {roster.length === 0 && (
+          <p className="text-muted">No players yet. Time to open your wallet! 💸</p>
+        )}
         {roster.map((r) => (
           <div key={r.player!.id} className="flex items-center justify-between rounded bg-card2/40 p-2">
             <span>{r.player!.name}</span>

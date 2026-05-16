@@ -18,7 +18,9 @@ export function BidHistory({ bids }: { bids: Entry[] }) {
         <span className="text-xs text-muted">{bids.length}</span>
       </div>
       <div className="max-h-52 space-y-2 overflow-y-auto">
-        {bids.length === 0 && <p className="text-sm text-muted">Be the first to bid!</p>}
+        {bids.length === 0 && (
+          <p className="text-sm text-muted">Silence... 🦗 Be the first to bid!</p>
+        )}
         {bids.map((bid, idx) => (
           <div
             key={`${bid.userId}-${bid.time}`}

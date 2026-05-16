@@ -1,6 +1,8 @@
+import Link from 'next/link'
+
 export default function NotFound() {
   return (
-    <div style={{
+    <div className="page-enter" style={{
       minHeight: '100vh',
       display: 'flex',
       alignItems: 'center',
@@ -27,7 +29,7 @@ export default function NotFound() {
         }}>
           Page not found
         </div>
-        <a href="/" style={{
+        <Link href="/" style={{
           display: 'inline-block',
           padding: '12px 32px',
           borderRadius: 10,
@@ -40,7 +42,7 @@ export default function NotFound() {
           letterSpacing: 1,
         }}>
           🏠 Go Home
-        </a>
+        </Link>
       </div>
     </div>
   )

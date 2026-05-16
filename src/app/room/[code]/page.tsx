@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { ref, onValue, off, update } from 'firebase/database'
+import { ref, onValue, off, update, get, set } from 'firebase/database'
 import { auth, db } from '@/lib/firebase'
 import { players as ALL_PLAYERS, Player } from '@/data/players'
 
@@ -49,17 +49,63 @@ export default function RoomPage({
   useEffect(() => {
     if (!user || !code) return
 
-    // Add self to participants
-    update(ref(db, `rooms/${code}/participants/${user.uid}`), {
-      name: user.displayName || 'Player',
-      email: user.email || '',
-      photoURL: user.photoURL || '',
-      budget: 100,
-      overseas: 0,
-      squadSize: 0,
-      isReady: false,
-      joinedAt: Date.now(),
-    })
+    const checkAndJoin = async () => {
+      try {
+        const metaSnap = await get(ref(db, `rooms/${code}/meta`))
+        if (!metaSnap.exists()) return
+
+        const meta = metaSnap.val() || {}
+        const participantRef = ref(db, `rooms/${code}/participants/${user.uid}`)
+        const partSnap = await get(participantRef)
+        const lockedParticipants = Array.isArray(meta?.lockedParticipants)
+          ? meta.lockedParticipants
+          : []
+        const hasLockedList = lockedParticipants.length > 0
+        const isLockedParticipant = lockedParticipants.includes(user.uid)
+
+        if (meta.status === 'finished') {
+          window.location.href = '/lobby'
+          return
+        }
+
+        // Only participants locked at auction start can stay in the auction.
+        if (meta.status === 'auction' && hasLockedList && !isLockedParticipant) {
+          window.location.href = '/lobby?error=auction_started'
+          return
+        }
+
+        if (partSnap.exists()) {
+          await update(participantRef, {
+            name: user.displayName || 'Player',
+            photoURL: user.photoURL || '',
+            lastSeen: Date.now(),
+          })
+          return
+        }
+
+        if (meta.status === 'auction') {
+          window.location.href = '/lobby?error=auction_started'
+          return
+        }
+
+        if (meta.status === 'waiting') {
+          await set(participantRef, {
+            name: user.displayName || 'Player',
+            email: user.email || '',
+            photoURL: user.photoURL || '',
+            budget: 100,
+            overseas: 0,
+            squadSize: 0,
+            isReady: false,
+            joinedAt: Date.now(),
+          })
+        }
+      } catch (err) {
+        console.error('Failed to join room:', err)
+      }
+    }
+
+    checkAndJoin()
 
     // Listen to room
     const roomRef = ref(db, `rooms/${code}`)
@@ -132,6 +178,9 @@ export default function RoomPage({
     try {
       const updates: Record<string, any> = {}
       updates[`rooms/${code}/meta/status`] = 'auction'
+      updates[`rooms/${code}/meta/lockedParticipants`] =
+        Object.keys(roomState?.participants || {})
+      updates[`rooms/${code}/meta/auctionStartedAt`] = Date.now()
       updates[`rooms/${code}/auction/currentIndex`] = 0
       updates[`rooms/${code}/auction/phase`] = 'bidding'
       updates[`rooms/${code}/auction/timerEnd`] = Date.now() + 15000
@@ -273,7 +322,7 @@ export default function RoomPage({
 
   // ── MAIN WAITING ROOM ──
   return (
-    <div style={{
+    <div className="page-enter" style={{
       minHeight: '100vh',
       background: '#030c18',
       backgroundImage: `

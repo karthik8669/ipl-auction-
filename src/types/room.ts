@@ -15,6 +15,16 @@ export interface ParticipantState {
   squadSize: number;
   isReady: boolean;
   joinedAt: number;
+  hasLeft?: boolean;
+  leftAt?: number;
+  lastSeen?: number;
+}
+
+export interface Playing11Submission {
+  players: string[];
+  captain: string;
+  viceCaptain: string;
+  submittedAt: number;
 }
 
 export interface TeamPlayerState {
@@ -103,6 +113,8 @@ export interface RoomState {
   auction: AuctionState;
   unsoldPlayers: string[];
   aiAnalysis: string | null;
+  playing11?: Record<string, Playing11Submission>;
+  playing11Analysis?: string | Record<string, unknown>;
   trades?: Record<string, TradeOffer>;
   franchises?: Record<string, Franchise>;
   chat?: Record<string, ChatMessage>;
