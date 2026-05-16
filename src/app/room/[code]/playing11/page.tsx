@@ -22,7 +22,8 @@ type AnalysisResult = {
 type TeamInsight = {
   uid: string;
   name: string;
-  rating?: number;
+  rank?: number;
+  score?: number;
   strengths?: string;
   weaknesses?: string;
   verdict?: string;
@@ -31,9 +32,8 @@ type TeamInsight = {
 type CombinedAnalysis = {
   winnerUid?: string;
   winnerName?: string;
-  winnerReason?: string;
   summary?: string;
-  teamInsights?: TeamInsight[];
+  leaderboard?: TeamInsight[];
 };
 
 type RoomStateLike = {
@@ -42,6 +42,7 @@ type RoomStateLike = {
   franchises?: Record<string, any>;
   playing11?: Record<string, any>;
   playing11Analysis?: CombinedAnalysis | string | null;
+  finalAnalysis?: CombinedAnalysis | string | null;
   meta?: { status?: string };
 };
 
@@ -87,15 +88,17 @@ export default function Playing11Page({
       setRoomState(data);
 
       const storedAnalysis = data?.playing11Analysis;
-      if (storedAnalysis) {
-        if (typeof storedAnalysis === "string") {
+      const storedFinalAnalysis = data?.finalAnalysis;
+      const analysisPayload = storedFinalAnalysis || storedAnalysis;
+      if (analysisPayload) {
+        if (typeof analysisPayload === "string") {
           try {
-            setCombinedAnalysis(JSON.parse(storedAnalysis) as CombinedAnalysis);
+            setCombinedAnalysis(JSON.parse(analysisPayload) as CombinedAnalysis);
           } catch {
             // ignore parse error
           }
         } else {
-          setCombinedAnalysis(storedAnalysis as CombinedAnalysis);
+          setCombinedAnalysis(analysisPayload as CombinedAnalysis);
         }
       }
 
@@ -315,26 +318,28 @@ export default function Playing11Page({
     }
   };
 
-  async function analyzeTeam() {
+  async function analyzeAllTeams() {
     if (!roomState || !user) return;
     setAnalyzing(true);
 
     try {
-      const existingAnalysis = roomState?.playing11Analysis;
+      const existingAnalysis = roomState?.finalAnalysis || roomState?.playing11Analysis;
       if (existingAnalysis) {
         const parsed =
           typeof existingAnalysis === "string"
             ? (JSON.parse(existingAnalysis) as CombinedAnalysis)
             : (existingAnalysis as CombinedAnalysis);
         setCombinedAnalysis(parsed);
-        const myInsight = (parsed?.teamInsights || []).find(
-          (insight) => insight.uid === user.uid,
-        );
+        const myInsight = (parsed?.leaderboard || []).find((insight) => insight.uid === user.uid);
         if (myInsight) {
           setAnalysisResult({
-            rating: myInsight.rating,
-            strengths: myInsight.strengths,
-            weaknesses: myInsight.weaknesses,
+            rating: myInsight.score,
+            strengths: Array.isArray(myInsight.strengths)
+              ? myInsight.strengths.join(" · ")
+              : myInsight.strengths,
+            weaknesses: Array.isArray(myInsight.weaknesses)
+              ? myInsight.weaknesses.join(" · ")
+              : myInsight.weaknesses,
             summary: myInsight.verdict,
           });
         }
@@ -376,7 +381,7 @@ export default function Playing11Page({
         return;
       }
 
-      const res = await fetch("/api/analyze-playing11", {
+      const res = await fetch("/api/analyze-all-teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teams: teamsPayload }),
@@ -387,20 +392,24 @@ export default function Playing11Page({
         const analysis = data.analysis as CombinedAnalysis;
         setCombinedAnalysis(analysis);
 
-        const myInsight = (analysis.teamInsights || []).find(
+        const myInsight = (analysis.leaderboard || []).find(
           (insight) => insight.uid === user.uid,
         );
         if (myInsight) {
           setAnalysisResult({
-            rating: myInsight.rating,
-            strengths: myInsight.strengths,
-            weaknesses: myInsight.weaknesses,
+            rating: myInsight.score,
+            strengths: Array.isArray(myInsight.strengths)
+              ? myInsight.strengths.join(" · ")
+              : myInsight.strengths,
+            weaknesses: Array.isArray(myInsight.weaknesses)
+              ? myInsight.weaknesses.join(" · ")
+              : myInsight.weaknesses,
             summary: myInsight.verdict || analysis.summary,
           });
         }
 
         await update(ref(realtimeDb), {
-          [`rooms/${code}/playing11Analysis`]: analysis,
+          [`rooms/${code}/finalAnalysis`]: analysis,
         });
       } else {
         alert("Combined analysis failed. Try again.");
@@ -418,7 +427,7 @@ export default function Playing11Page({
     if (!iSubmitted) return;
     if (combinedAnalysis) return;
     if (analyzing) return;
-    analyzeTeam();
+    analyzeAllTeams();
   }, [allSubmitted, iSubmitted, combinedAnalysis, analyzing]);
 
   const roleEmoji = (role: string) => {
@@ -1165,13 +1174,13 @@ export default function Playing11Page({
                 {combinedAnalysis?.winnerName || "Awaiting result"}
               </div>
               <div style={{ color: "#ddeeff", fontSize: 13, marginTop: 6 }}>
-                {combinedAnalysis?.winnerReason || combinedAnalysis?.summary || ""}
+                {combinedAnalysis?.summary || ""}
               </div>
             </div>
 
-            {!!combinedAnalysis?.teamInsights?.length && (
+            {!!combinedAnalysis?.leaderboard?.length && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {(combinedAnalysis.teamInsights || []).map((insight) => (
+                {(combinedAnalysis.leaderboard || []).map((insight) => (
                   <div
                     key={insight.uid}
                     style={{
@@ -1209,7 +1218,7 @@ export default function Playing11Page({
                         lineHeight: 1,
                       }}
                     >
-                      {Number(insight.rating || 0).toFixed(1)}
+                        {Number(insight.score || 0).toFixed(1)}
                     </div>
                   </div>
                 ))}

@@ -204,9 +204,16 @@ export default function LobbyPage() {
       const data = snap.val()
       const participants = data?.participants || {}
       const wasParticipant = !!participants[user.uid]
+      const alreadyLeft = !!participants[user.uid]?.hasLeft
 
       if (data?.meta?.status === 'auction' && !wasParticipant) {
         setJoinError('❌ Auction is in progress. New players cannot join.')
+        setJoining(false)
+        return
+      }
+
+      if (alreadyLeft) {
+        setJoinError('❌ You already left this auction and cannot rejoin.')
         setJoining(false)
         return
       }
@@ -220,6 +227,7 @@ export default function LobbyPage() {
       if (wasParticipant) {
         await update(ref(db, `rooms/${code}/participants/${user.uid}`), {
           name: user.displayName || 'Player',
+          email: user.email || '',
           photoURL: user.photoURL || '',
           lastSeen: Date.now(),
         })

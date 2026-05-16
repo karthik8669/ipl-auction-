@@ -157,6 +157,7 @@ export default function AuctionPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(900);
   const [showLeaveWarning, setShowLeaveWarning] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [bidFlash, setBidFlash] = useState(false);
   const [playerVisible, setPlayerVisible] = useState(true);
   const [bidFeedback, setBidFeedback] = useState<{
@@ -184,6 +185,7 @@ export default function AuctionPage() {
   const participants = currentRoom?.participants || {};
   const isHost = (currentRoom?.meta?.hostId || "") === user?.uid;
   const pool = firebaseArrayToArray<string>(currentRoom?.auction?.pool);
+  const isPoolRandomized = !!currentRoom?.auction?.isRandomized;
   const currentIndex = currentRoom?.auction?.currentIndex ?? 0;
   const currentPlayerId = pool[currentIndex] || null;
   const currentPlayer = currentPlayerId
@@ -281,6 +283,22 @@ export default function AuctionPage() {
   const winnerFranchise = leaderId ? currentRoom?.franchises?.[leaderId] || {} : {};
   const winnerColor =
     (winnerFranchise as { color?: string })?.color || "#D4AF37";
+
+  const teamBudgetCards = useMemo(
+    () =>
+      Object.entries(participants)
+        .map(([uid, participant]) => ({
+          uid,
+          name:
+            currentRoom?.franchises?.[uid]?.name || participant?.name || "Team",
+          logo: currentRoom?.franchises?.[uid]?.logo || "🏏",
+          budget: participant?.budget ?? 100,
+          squadSize: participant?.squadSize ?? 0,
+          overseas: participant?.overseas ?? 0,
+        }))
+        .sort((a, b) => b.budget - a.budget),
+    [currentRoom?.franchises, participants],
+  );
 
   const roleConfig: Record<
     string,
@@ -413,6 +431,31 @@ export default function AuctionPage() {
     await fbUpdate(ref(db), { [`rooms/${code}/auction/skipVotes`]: null });
     finalizeUnsold();
   }
+
+  useEffect(() => {
+    if (!user?.uid || !code) return;
+    if (currentRoom?.meta?.status === "finished") {
+      setShowRules(false);
+      return;
+    }
+
+    const rulesKey = `ipl-auction-rules:${code}:${user.uid}`;
+    try {
+      setShowRules(localStorage.getItem(rulesKey) !== "1");
+    } catch {
+      setShowRules(true);
+    }
+  }, [code, currentRoom?.meta?.status, user?.uid]);
+
+  const acknowledgeRules = useCallback(() => {
+    if (!user?.uid) return;
+    try {
+      localStorage.setItem(`ipl-auction-rules:${code}:${user.uid}`, "1");
+    } catch {
+      // Ignore storage failures and just close the modal.
+    }
+    setShowRules(false);
+  }, [code, user?.uid]);
 
   // --- Auto-end & Manual End Logic ---
   const handleAutoEnd = useCallback(async () => {
@@ -559,8 +602,13 @@ export default function AuctionPage() {
         const partSnap = await get(participantRef);
 
         if (partSnap.exists()) {
+          if (partSnap.val()?.hasLeft) {
+            window.location.href = "/lobby";
+            return;
+          }
           await update(participantRef, {
             name: user.displayName || "Player",
+            email: user.email || "",
             photoURL: user.photoURL || "",
             lastSeen: Date.now(),
           });
@@ -912,6 +960,139 @@ export default function AuctionPage() {
                           radial-gradient(ellipse at 80% 80%, rgba(212,175,55,0.08) 0%, transparent 50%)`,
         }}
       >
+        <div
+          style={{
+            padding: isMobile ? "8px 12px 0" : "10px 24px 0",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              paddingBottom: 4,
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
+            }}
+          >
+            {teamBudgetCards.map((team) => (
+              <button
+                key={team.uid}
+                onClick={() => setShowAllTeams(true)}
+                style={{
+                  flexShrink: 0,
+                  minWidth: isMobile ? 132 : 168,
+                  padding: isMobile ? "8px 10px" : "10px 12px",
+                  borderRadius: 12,
+                  border: `1px solid ${team.uid === user?.uid ? "rgba(0,200,150,0.35)" : "rgba(255,255,255,0.08)"}`,
+                  background:
+                    team.uid === user?.uid
+                      ? "rgba(0,200,150,0.08)"
+                      : "rgba(13,34,64,0.6)",
+                  color: "#ddeeff",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    marginBottom: 4,
+                    fontFamily: "Rajdhani, sans-serif",
+                    fontWeight: 700,
+                    fontSize: isMobile ? 12 : 13,
+                  }}
+                >
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {team.logo} {team.name}
+                  </span>
+                  <span style={{ color: "#D4AF37", flexShrink: 0 }}>
+                    {formatCr(team.budget)}
+                  </span>
+                </div>
+                <div style={{ color: "#5a8ab0", fontSize: 10 }}>
+                  {team.squadSize}/20 · {team.overseas}/8 overseas
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {showRules && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 260,
+              background: "rgba(0,0,0,0.84)",
+              backdropFilter: "blur(10px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              style={{
+                width: "min(520px, 100%)",
+                background: "#07182c",
+                border: "1px solid rgba(212,175,55,0.35)",
+                borderRadius: 20,
+                padding: isMobile ? "22px 18px" : "28px 26px",
+                boxShadow: "0 24px 70px rgba(0,0,0,0.6)",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "Teko, sans-serif",
+                  fontSize: isMobile ? 26 : 34,
+                  color: "#D4AF37",
+                  letterSpacing: 3,
+                  marginBottom: 10,
+                }}
+              >
+                📜 AUCTION RULES
+              </div>
+              <div style={{ color: "#5a8ab0", fontSize: 13, lineHeight: 1.7 }}>
+                <div>• Squad limit is 20 players.</div>
+                <div>• Overseas limit is 8 players per squad.</div>
+                <div>• Withdrawn bids cannot be restored for the current player.</div>
+                <div>• Unsold players may recycle up to 3 times if squads are still incomplete.</div>
+                <div>• Leaving the auction locks your slot for the session.</div>
+              </div>
+              <button
+                onClick={acknowledgeRules}
+                style={{
+                  width: "100%",
+                  marginTop: 18,
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "linear-gradient(135deg, #D4AF37, #f5d76e)",
+                  color: "#111",
+                  fontFamily: "Teko, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 22,
+                  letterSpacing: 2,
+                  cursor: "pointer",
+                }}
+              >
+                I UNDERSTAND
+              </button>
+            </div>
+          </div>
+        )}
+
         {isMobile ? (
           <>
             <nav
@@ -1026,6 +1207,24 @@ export default function AuctionPage() {
                 }}
               >
                 👕 Team
+              </button>
+
+              <button
+                onClick={() => setShowAllTeams(true)}
+                style={{
+                  padding: "5px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #1a3a5c",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "#5a8ab0",
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 600,
+                  fontSize: 11,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                👥 All
               </button>
 
               <button
@@ -1944,6 +2143,24 @@ export default function AuctionPage() {
                   >
                     LIVE
                   </span>
+                  {isPoolRandomized && (
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 20,
+                        background: "rgba(155,89,182,0.15)",
+                        border: "1px solid rgba(155,89,182,0.3)",
+                        color: "#b57bee",
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      🎲 RANDOM
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -3128,6 +3345,129 @@ export default function AuctionPage() {
         </div>
       )}
 
+      {showAllTeams && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 240,
+            background: "rgba(0,0,0,0.72)",
+            backdropFilter: "blur(6px)",
+          }}
+          onClick={() => setShowAllTeams(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: "min(420px, calc(100vw - 18px))",
+              background: "#07182c",
+              borderLeft: "1px solid #1a3a5c",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                padding: "16px 18px",
+                borderBottom: "1px solid #1a3a5c",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontFamily: "Teko, sans-serif",
+                    fontSize: 26,
+                    color: "#D4AF37",
+                    letterSpacing: 2,
+                  }}
+                >
+                  👥 ALL TEAM PURSES
+                </div>
+                <div style={{ color: "#5a8ab0", fontSize: 11 }}>
+                  Live budget and squad tracker
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAllTeams(false)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "#ddeeff",
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {teamBudgetCards.map((team) => (
+                  <div
+                    key={team.uid}
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      background:
+                        team.uid === user?.uid
+                          ? "rgba(0,200,150,0.08)"
+                          : "rgba(13,34,64,0.55)",
+                      border: `1px solid ${team.uid === user?.uid ? "rgba(0,200,150,0.35)" : "#1a3a5c"}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: "Rajdhani, sans-serif",
+                          fontWeight: 700,
+                          fontSize: 15,
+                          color: "#ddeeff",
+                        }}
+                      >
+                        {team.logo} {team.name}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "Teko, sans-serif",
+                          fontSize: 24,
+                          color: team.budget < 10 ? "#ff4060" : "#D4AF37",
+                          lineHeight: 1,
+                        }}
+                      >
+                        {formatCr(team.budget)}
+                      </div>
+                    </div>
+                    <div style={{ color: "#5a8ab0", fontSize: 12 }}>
+                      Squad {team.squadSize}/20 · Overseas {team.overseas}/8
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {phase === "sold" && (
         <div
           style={{
@@ -3551,6 +3891,24 @@ export default function AuctionPage() {
                             </span>
                           )}
                         </div>
+                          {isPoolRandomized && (
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: 20,
+                                background: "rgba(155,89,182,0.15)",
+                                border: "1px solid rgba(155,89,182,0.3)",
+                                color: "#b57bee",
+                                fontSize: 10,
+                                letterSpacing: 1,
+                                fontFamily: "Rajdhani, sans-serif",
+                                fontWeight: 700,
+                                flexShrink: 0,
+                              }}
+                            >
+                              🎲 RANDOM
+                            </span>
+                          )}
                         <div
                           style={{
                             fontFamily: "Teko, sans-serif",

@@ -14,6 +14,23 @@ import { AuctionStats } from "@/components/results/AuctionStats";
 import { SquadCardGenerator } from "@/components/results/SquadCard";
 import type { RoomState } from "@/types/room";
 
+type LeaderboardEntry = {
+  uid: string;
+  name: string;
+  rank?: number;
+  score?: number;
+  strengths?: string[];
+  weaknesses?: string[];
+  verdict?: string;
+};
+
+type FinalAnalysis = {
+  winnerUid?: string;
+  winnerName?: string;
+  summary?: string;
+  leaderboard?: LeaderboardEntry[];
+};
+
 export default function ResultsPage({
   params,
 }: {
@@ -27,9 +44,7 @@ export default function ResultsPage({
   const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [aiAnalysis, setAiAnalysis] = useState<Record<string, unknown> | null>(
-    null,
-  );
+  const [aiAnalysis, setAiAnalysis] = useState<FinalAnalysis | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [selectedTab, setSelectedTab] = useState<string>("");
   const [statsTab, setStatsTab] = useState<"analysis" | "overview">("overview");
@@ -68,9 +83,14 @@ export default function ResultsPage({
 
         if (!selectedTab && user) setSelectedTab(user.uid);
 
-        if (data?.aiAnalysis && typeof data.aiAnalysis === "string") {
+        const storedFinal = data?.finalAnalysis || data?.aiAnalysis;
+        if (storedFinal) {
           try {
-            setAiAnalysis(JSON.parse(data.aiAnalysis) as Record<string, unknown>);
+            setAiAnalysis(
+              typeof storedFinal === "string"
+                ? (JSON.parse(storedFinal) as FinalAnalysis)
+                : (storedFinal as FinalAnalysis),
+            );
           } catch {
             // ignore parse errors
           }
@@ -90,6 +110,7 @@ export default function ResultsPage({
     if (!roomState || aiAnalysis || aiLoading) return;
     const meta = roomState.meta as { status?: string } | undefined;
     if (meta?.status !== "finished") return;
+    if (!Object.keys(roomState.playing11 || {}).length) return;
 
     triggerAiAnalysis();
   }, [roomState, aiAnalysis, aiLoading]);
@@ -102,49 +123,60 @@ export default function ResultsPage({
         string,
         { name?: string; budget?: number; overseas?: number }
       >;
+      const playing11 = (roomState.playing11 || {}) as Record<
+        string,
+        {
+          players?: string[];
+          captain?: string;
+          viceCaptain?: string;
+        }
+      >;
       const teams = (roomState.teams || {}) as Record<
         string,
         Record<string, { soldFor?: number }>
       >;
 
-      const teamsPayload = Object.entries(participants).map(
-        ([uid, p]: [string, { name?: string; budget?: number; overseas?: number }]) => {
-          const rawTeam = teams[uid] || {};
-          const teamPlayers = Object.entries(rawTeam)
-            .map(([id, meta]: [string, { soldFor?: number }]) => {
-              const pl = ALL_PLAYERS.find((x) => x.id === id);
-              return pl
-                ? {
-                    name: pl.name,
-                    role: pl.role,
-                    nationality: pl.nationality,
-                    soldFor: meta?.soldFor ?? pl.basePrice,
-                    basePrice: pl.basePrice,
-                    stats: pl.stats,
-                  }
-                : null;
-            })
-            .filter(Boolean);
+      const teamsPayload = Object.entries(playing11).map(([uid, submission]) => {
+        const participant = participants[uid] || {};
+        const rawTeam = teams[uid] || {};
+        const teamPlayers = (submission.players || [])
+          .map((id) => {
+            const pl = ALL_PLAYERS.find((x) => x.id === id);
+            if (!pl) return null;
+            return {
+              name: pl.name,
+              role: pl.role,
+              nationality: pl.nationality,
+              soldFor: rawTeam[id]?.soldFor ?? pl.basePrice,
+              basePrice: pl.basePrice,
+              stats: pl.stats,
+            };
+          })
+          .filter(Boolean);
 
-          return {
-            name: p?.name || "Unknown",
-            budget: (p?.budget ?? 100).toString(),
-            overseas: p?.overseas ?? 0,
-            players: teamPlayers,
-          };
-        },
-      );
+        return {
+          uid,
+          name: participant?.name || "Unknown",
+          captain: ALL_PLAYERS.find((pl) => pl.id === submission.captain)?.name || "",
+          viceCaptain:
+            ALL_PLAYERS.find((pl) => pl.id === submission.viceCaptain)?.name || "",
+          players: teamPlayers,
+        };
+      });
 
-      const res = await fetch("/api/analyze", {
+      const res = await fetch("/api/analyze-all-teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teams: teamsPayload }),
       });
-      const data = (await res.json()) as { success?: boolean; analysis?: Record<string, unknown> };
+      const data = (await res.json()) as {
+        success?: boolean;
+        analysis?: FinalAnalysis;
+      };
       if (data.success && data.analysis) {
         setAiAnalysis(data.analysis);
         await update(ref(realtimeDb, `rooms/${code}`), {
-          aiAnalysis: JSON.stringify(data.analysis),
+          finalAnalysis: JSON.stringify(data.analysis),
         });
       }
     } catch (e) {
@@ -580,25 +612,11 @@ export default function ResultsPage({
               >
                 <span style={{ fontSize: 40 }}>🏆</span>
                 <div>
-                  <div
-                    style={{
-                      color: "#5a8ab0",
-                      fontSize: 11,
-                      letterSpacing: 2,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Best Squad
+                  <div style={{ color: "#5a8ab0", fontSize: 11, letterSpacing: 2, textTransform: "uppercase" }}>
+                    Best Playing 11
                   </div>
-                  <div
-                    style={{
-                      fontFamily: "Teko, sans-serif",
-                      fontSize: 36,
-                      color: "#D4AF37",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {String(aiAnalysis.winner || "")}
+                  <div style={{ fontFamily: "Teko, sans-serif", fontSize: 36, color: "#D4AF37", lineHeight: 1 }}>
+                    {aiAnalysis.winnerName || "Awaiting result"}
                   </div>
                 </div>
               </div>
@@ -611,20 +629,44 @@ export default function ResultsPage({
                   wordBreak: "break-word",
                 }}
               >
-                {String(aiAnalysis.winnerReason || "")}
+                  {String(aiAnalysis.summary || "")}
               </p>
-              {aiAnalysis.funFact != null && String(aiAnalysis.funFact) && (
+                {!!aiAnalysis.leaderboard?.length && (
                 <div
                   style={{
-                    padding: "10px 16px",
+                      padding: "10px 12px",
                     borderRadius: 8,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid #1a3a5c",
-                    color: "#5a8ab0",
-                    fontSize: 13,
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid #1a3a5c",
+                      color: "#ddeeff",
+                      fontSize: 13,
                   }}
                 >
-                  💡 {String(aiAnalysis.funFact)}
+                    <div style={{ color: "#5a8ab0", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>
+                      Final AI Leaderboard
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {(aiAnalysis.leaderboard || []).map((team) => (
+                        <div key={team.uid} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(7,24,44,0.75)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: team.rank === 1 ? "#D4AF37" : team.rank === 2 ? "#aaa" : team.rank === 3 ? "#cd7f32" : "rgba(255,255,255,0.08)", color: team.rank && team.rank <= 3 ? "#111" : "#ddeeff", fontFamily: "Teko, sans-serif", fontSize: 16, fontWeight: 700 }}>
+                              {team.rank || 0}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, color: "#ddeeff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {team.name}
+                              </div>
+                              <div style={{ color: "#5a8ab0", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {team.verdict || "Strong lineup"}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ fontFamily: "Teko, sans-serif", fontSize: 22, color: "#D4AF37", flexShrink: 0 }}>
+                            {Number(team.score || 0).toFixed(1)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                 </div>
               )}
             </div>

@@ -104,6 +104,8 @@ export interface AuctionState {
   leaderName: string | null;
   leaderPhoto: string | null;
   bidHistory: BidEntry[];
+  recycleCount?: number;
+  isRandomized?: boolean;
 }
 
 export interface RoomState {
@@ -113,6 +115,7 @@ export interface RoomState {
   auction: AuctionState;
   unsoldPlayers: string[];
   aiAnalysis: string | null;
+  finalAnalysis?: string | Record<string, unknown>;
   playing11?: Record<string, Playing11Submission>;
   playing11Analysis?: string | Record<string, unknown>;
   trades?: Record<string, TradeOffer>;

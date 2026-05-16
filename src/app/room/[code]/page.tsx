@@ -20,6 +20,8 @@ export default function RoomPage({
   const [copied, setCopied] = useState(false)
   const [showPlayerModal, setShowPlayerModal] = useState(false)
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set())
+  const [isRandomized, setIsRandomized] = useState(false)
+  const [randomizeAnim, setRandomizeAnim] = useState(false)
   const [playerSearch, setPlayerSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
   const [natFilter, setNatFilter] = useState('All')
@@ -35,6 +37,15 @@ export default function RoomPage({
   }, [])
 
   const isMobile = windowWidth < 768
+
+  function shuffleArray<T>(array: T[]): T[] {
+    const arr = [...array]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+    }
+    return arr
+  }
 
   // Auth listener
   useEffect(() => {
@@ -75,8 +86,13 @@ export default function RoomPage({
         }
 
         if (partSnap.exists()) {
+          if (partSnap.val()?.hasLeft) {
+            window.location.href = '/lobby'
+            return
+          }
           await update(participantRef, {
             name: user.displayName || 'Player',
+            email: user.email || '',
             photoURL: user.photoURL || '',
             lastSeen: Date.now(),
           })
@@ -216,12 +232,24 @@ export default function RoomPage({
   async function savePool() {
     if (!isHost || selectedPlayerIds.size === 0) return
     try {
+      let poolArray = [...selectedPlayerIds]
+
+      if (isRandomized) {
+        poolArray = shuffleArray(poolArray)
+      }
+
       const { update: fbUpdate } = await import('firebase/database')
       await fbUpdate(ref(db), {
-        [`rooms/${code}/auction/pool`]: [...selectedPlayerIds],
+        [`rooms/${code}/auction/pool`]: poolArray,
+        [`rooms/${code}/auction/isRandomized`]: isRandomized,
       })
       setShowPlayerModal(false)
+      setIsRandomized(false)
       console.log('Pool saved:', selectedPlayerIds.size, 'players')
+      const msg = isRandomized
+        ? `🎲 ${poolArray.length} players saved in RANDOM order!`
+        : `✅ ${poolArray.length} players saved!`
+      alert(msg)
     } catch (e: any) {
       console.error('Save pool error:', e)
       alert('Failed to save: ' + e.message)
@@ -248,6 +276,7 @@ export default function RoomPage({
     ? rawPool
     : Object.values(rawPool)
   const poolCount = pool.length
+  const isPoolRandomized = !!roomState?.auction?.isRandomized
 
   console.log('isHost check:', {
     userUid: user?.uid,
@@ -398,7 +427,7 @@ export default function RoomPage({
       <div style={{
         maxWidth: 760,
         margin: '0 auto',
-        padding: isMobile ? '24px 16px 80px' : '40px 24px 80px',
+        padding: isMobile ? '24px 16px 140px' : '40px 24px 120px',
       }}>
 
         {/* ── ROOM CODE BOX ── */}
@@ -621,6 +650,19 @@ export default function RoomPage({
                   {poolCount} selected
                 </span>
               )}
+                {poolCount > 0 && isPoolRandomized && (
+                  <span style={{
+                    marginLeft: 8,
+                    padding: '2px 10px',
+                    borderRadius: 20,
+                    background: 'rgba(155,89,182,0.15)',
+                    border: '1px solid rgba(155,89,182,0.3)',
+                    color: '#b57bee',
+                    fontSize: 12,
+                  }}>
+                    🎲 RANDOM
+                  </span>
+                )}
             </button>
 
             {poolCount > 0 && (
@@ -694,7 +736,10 @@ export default function RoomPage({
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button
-                onClick={() => setSelectedPlayerIds(new Set(ALL_PLAYERS.map(p => p.id)))}
+                onClick={() => {
+                  setSelectedPlayerIds(new Set(ALL_PLAYERS.map(p => p.id)))
+                  setIsRandomized(false)
+                }}
                 style={{
                   padding: '8px 16px', borderRadius: 8,
                   border: '1px solid rgba(212,175,55,0.3)',
@@ -706,7 +751,10 @@ export default function RoomPage({
                 Select All ({ALL_PLAYERS.length})
               </button>
               <button
-                onClick={() => setSelectedPlayerIds(new Set())}
+                onClick={() => {
+                  setSelectedPlayerIds(new Set())
+                  setIsRandomized(false)
+                }}
                 style={{
                   padding: '8px 16px', borderRadius: 8,
                   border: '1px solid rgba(255,64,96,0.3)',
@@ -716,6 +764,56 @@ export default function RoomPage({
                 }}
               >
                 Clear
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedPlayerIds.size === 0) {
+                    alert('Select some players first!')
+                    return
+                  }
+                  setRandomizeAnim(true)
+                  setTimeout(() => setRandomizeAnim(false), 600)
+                  setIsRandomized(true)
+                }}
+                style={{
+                  padding: isMobile ? '8px 12px' : '8px 16px',
+                  borderRadius: 8,
+                  border: `1px solid ${isRandomized
+                    ? 'rgba(155,89,182,0.6)'
+                    : 'rgba(155,89,182,0.3)'}`,
+                  background: isRandomized
+                    ? 'rgba(155,89,182,0.2)'
+                    : 'rgba(155,89,182,0.08)',
+                  color: '#b57bee',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontWeight: 700,
+                  fontSize: isMobile ? 11 : 13,
+                  cursor: 'pointer',
+                  letterSpacing: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'rgba(155,89,182,0.25)'
+                  e.currentTarget.style.transform = 'scale(1.02)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = isRandomized
+                    ? 'rgba(155,89,182,0.2)'
+                    : 'rgba(155,89,182,0.08)'
+                  e.currentTarget.style.transform = 'none'
+                }}
+              >
+                <span style={{
+                  display: 'inline-block',
+                  animation: randomizeAnim ? 'spin 0.5s ease-out' : 'none',
+                }}>
+                  🎲
+                </span>
+                {isMobile ? 'Random' : isRandomized ? '✓ Randomized!' : 'Randomize Order'}
               </button>
               <button
                 onClick={savePool}
@@ -747,6 +845,84 @@ export default function RoomPage({
                 ✕
               </button>
             </div>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            gap: 6,
+            flexWrap: 'wrap',
+            padding: '8px 16px',
+            borderBottom: '1px solid #1a3a5c',
+            background: 'rgba(3,12,24,0.5)',
+          }}>
+            <span style={{
+              color: '#5a8ab0', fontSize: 10,
+              letterSpacing: 2, fontFamily: 'Rajdhani, sans-serif',
+              fontWeight: 600, alignSelf: 'center',
+              textTransform: 'uppercase', marginRight: 4,
+            }}>
+              Quick Select:
+            </span>
+
+            <button
+              onClick={() => {
+                const marquee = new Set(
+                  ALL_PLAYERS.filter(p => p.basePrice >= 1.0).map(p => p.id)
+                )
+                setSelectedPlayerIds(marquee)
+                setIsRandomized(false)
+              }}
+              style={{
+                padding: '5px 12px', borderRadius: 20,
+                border: '1px solid rgba(212,175,55,0.3)',
+                background: 'rgba(212,175,55,0.06)',
+                color: '#D4AF37',
+                fontFamily: 'Rajdhani, sans-serif',
+                fontWeight: 700, fontSize: 11,
+                cursor: 'pointer', letterSpacing: 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ⭐ Marquee Players
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedPlayerIds(new Set(ALL_PLAYERS.map(p => p.id)))
+                setIsRandomized(false)
+              }}
+              style={{
+                padding: '5px 12px', borderRadius: 20,
+                border: '1px solid rgba(0,200,150,0.3)',
+                background: 'rgba(0,200,150,0.06)',
+                color: '#00c896',
+                fontFamily: 'Rajdhani, sans-serif',
+                fontWeight: 700, fontSize: 11,
+                cursor: 'pointer', letterSpacing: 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ✅ All Players
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedPlayerIds(new Set())
+                setIsRandomized(false)
+              }}
+              style={{
+                padding: '5px 12px', borderRadius: 20,
+                border: '1px solid rgba(255,64,96,0.3)',
+                background: 'rgba(255,64,96,0.06)',
+                color: '#ff4060',
+                fontFamily: 'Rajdhani, sans-serif',
+                fontWeight: 700, fontSize: 11,
+                cursor: 'pointer', letterSpacing: 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              🗑️ Clear All
+            </button>
           </div>
 
           {/* Filter bar */}
