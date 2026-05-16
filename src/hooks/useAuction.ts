@@ -276,9 +276,10 @@ export function useAuction(
 
   const resumeAuction = useCallback(async () => {
     if (!roomCode) return;
+    // When resuming from a pause, use a shorter timer (10s) so the auction restarts quickly
     await update(ref(realtimeDb, `rooms/${roomCode}/auction`), {
       phase: "bidding",
-      timerEnd: Date.now() + 15000,
+      timerEnd: Date.now() + 10000,
     });
   }, [roomCode]);
 

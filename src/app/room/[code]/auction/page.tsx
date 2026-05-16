@@ -152,6 +152,8 @@ export default function AuctionPage() {
     placeBid,
     finalizeSold,
     finalizeUnsold,
+    pauseAuction,
+    resumeAuction,
   } = useAuction(currentRoom, roomCode);
   const { seconds } = useTimer(auction?.timerEnd ?? 0);
   const [isMobile, setIsMobile] = useState(false);
@@ -877,6 +879,43 @@ export default function AuctionPage() {
         >
           LOADING AUCTION...
         </div>
+        {isHost && (
+          <div style={{ position: 'absolute', top: isMobile ? 8 : 12, right: isMobile ? 8 : 24, zIndex: 120 }}>
+            {phase === 'bidding' ? (
+              <button
+                onClick={pauseAuction}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,140,0,0.2)',
+                  background: 'rgba(255,140,0,0.06)',
+                  color: '#ff8c00',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                ⏸ Pause
+              </button>
+            ) : (
+              <button
+                onClick={resumeAuction}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(0,200,150,0.12)',
+                  background: 'rgba(0,200,150,0.06)',
+                  color: '#00c896',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                ▶ Continue (10s)
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   if (!currentPlayer) {
@@ -1854,51 +1893,70 @@ export default function AuctionPage() {
                   </div>
                 )}
 
-                <button
-                  onClick={isHost ? forceSkip : voteToSkip}
-                  disabled={!isHost && iHaveVotedSkip}
-                  style={{
-                    width: "100%",
-                    padding: isMobile ? "11px" : "12px",
-                    borderRadius: 12,
-                    border: `1px solid ${
-                      iHaveVotedSkip
-                        ? "rgba(255,255,255,0.08)"
-                        : allVotedSkip
-                          ? "rgba(255,64,96,0.4)"
-                          : "rgba(255,140,0,0.3)"
-                    }`,
-                    background: allVotedSkip
-                      ? "rgba(255,64,96,0.1)"
-                      : iHaveVotedSkip
-                        ? "rgba(255,255,255,0.03)"
-                        : "rgba(255,140,0,0.08)",
-                    color: allVotedSkip
-                      ? "#ff4060"
-                      : iHaveVotedSkip
-                        ? "#5a8ab0"
-                        : "#ff8c00",
-                    fontFamily: "Rajdhani, sans-serif",
-                    fontWeight: 700,
-                    fontSize: isMobile ? "13px" : "14px",
-                    cursor:
-                      !isHost && iHaveVotedSkip ? "not-allowed" : "pointer",
-                    letterSpacing: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {isHost
-                    ? "⏭ Force Skip Player"
-                    : iHaveVotedSkip
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <button
+                    onClick={voteToSkip}
+                    disabled={iHaveVotedSkip}
+                    style={{
+                      width: "100%",
+                      padding: isMobile ? "11px" : "12px",
+                      borderRadius: 12,
+                      border: `1px solid ${
+                        iHaveVotedSkip
+                          ? "rgba(255,255,255,0.08)"
+                          : allVotedSkip
+                            ? "rgba(255,64,96,0.4)"
+                            : "rgba(255,140,0,0.3)"
+                      }`,
+                      background: allVotedSkip
+                        ? "rgba(255,64,96,0.1)"
+                        : iHaveVotedSkip
+                          ? "rgba(255,255,255,0.03)"
+                          : "rgba(255,140,0,0.08)",
+                      color: allVotedSkip
+                        ? "#ff4060"
+                        : iHaveVotedSkip
+                          ? "#5a8ab0"
+                          : "#ff8c00",
+                      fontFamily: "Rajdhani, sans-serif",
+                      fontWeight: 700,
+                      fontSize: isMobile ? "13px" : "14px",
+                      cursor: iHaveVotedSkip ? "not-allowed" : "pointer",
+                      letterSpacing: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {iHaveVotedSkip
                       ? `✓ You voted skip · ${skipVoteCount}/${totalPlayers} voted`
                       : allVotedSkip
                         ? `⏭ Skipping... (${skipVoteCount}/${totalPlayers})`
                         : `⏭ Vote to Skip · ${skipVoteCount}/${totalPlayers} voted`}
-                </button>
+                  </button>
+
+                  {isHost && (
+                    <button
+                      onClick={forceSkip}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(255,64,96,0.18)",
+                        background: "rgba(255,64,96,0.06)",
+                        color: "#ff4060",
+                        fontFamily: "Rajdhani, sans-serif",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ⏭ Force Skip Now
+                    </button>
+                  )}
+                </div>
               </div>
 
               {!isHost && !allVotedSkip && skipVoteCount > 0 && (
@@ -2917,54 +2975,71 @@ export default function AuctionPage() {
 
                   {phase === "bidding" && (
                     <>
-                      <button
-                        onClick={isHost ? forceSkip : voteToSkip}
-                        disabled={!isHost && iHaveVotedSkip}
-                        style={{
-                          width: "100%",
-                          padding: isMobile ? "11px" : "12px",
-                          borderRadius: 12,
-                          border: `1px solid ${
-                            iHaveVotedSkip
-                              ? "rgba(255,255,255,0.08)"
-                              : allVotedSkip
-                                ? "rgba(255,64,96,0.4)"
-                                : "rgba(255,140,0,0.3)"
-                          }`,
-                          background: allVotedSkip
-                            ? "rgba(255,64,96,0.1)"
-                            : iHaveVotedSkip
-                              ? "rgba(255,255,255,0.03)"
-                              : "rgba(255,140,0,0.08)",
-                          color: allVotedSkip
-                            ? "#ff4060"
-                            : iHaveVotedSkip
-                              ? "#5a8ab0"
-                              : "#ff8c00",
-                          fontFamily: "Rajdhani, sans-serif",
-                          fontWeight: 700,
-                          fontSize: isMobile ? "13px" : "14px",
-                          cursor:
-                            !isHost && iHaveVotedSkip
-                              ? "not-allowed"
-                              : "pointer",
-                          letterSpacing: 1,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 8,
-                          transition: "all 0.15s",
-                          marginTop: 8,
-                        }}
-                      >
-                        {isHost
-                          ? "⏭ Force Skip Player"
-                          : iHaveVotedSkip
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <button
+                          onClick={voteToSkip}
+                          disabled={iHaveVotedSkip}
+                          style={{
+                            width: "100%",
+                            padding: isMobile ? "11px" : "12px",
+                            borderRadius: 12,
+                            border: `1px solid ${
+                              iHaveVotedSkip
+                                ? "rgba(255,255,255,0.08)"
+                                : allVotedSkip
+                                  ? "rgba(255,64,96,0.4)"
+                                  : "rgba(255,140,0,0.3)"
+                            }`,
+                            background: allVotedSkip
+                              ? "rgba(255,64,96,0.1)"
+                              : iHaveVotedSkip
+                                ? "rgba(255,255,255,0.03)"
+                                : "rgba(255,140,0,0.08)",
+                            color: allVotedSkip
+                              ? "#ff4060"
+                              : iHaveVotedSkip
+                                ? "#5a8ab0"
+                                : "#ff8c00",
+                            fontFamily: "Rajdhani, sans-serif",
+                            fontWeight: 700,
+                            fontSize: isMobile ? "13px" : "14px",
+                            cursor: iHaveVotedSkip ? "not-allowed" : "pointer",
+                            letterSpacing: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 8,
+                            transition: "all 0.15s",
+                            marginTop: 8,
+                          }}
+                        >
+                          {iHaveVotedSkip
                             ? `✓ You voted skip · ${skipVoteCount}/${totalPlayers} voted`
                             : allVotedSkip
                               ? `⏭ Skipping... (${skipVoteCount}/${totalPlayers})`
                               : `⏭ Vote to Skip · ${skipVoteCount}/${totalPlayers} voted`}
-                      </button>
+                        </button>
+
+                        {isHost && (
+                          <button
+                            onClick={forceSkip}
+                            style={{
+                              width: "100%",
+                              padding: "8px",
+                              borderRadius: 10,
+                              border: "1px solid rgba(255,64,96,0.18)",
+                              background: "rgba(255,64,96,0.06)",
+                              color: "#ff4060",
+                              fontFamily: "Rajdhani, sans-serif",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                            }}
+                          >
+                            ⏭ Force Skip Now
+                          </button>
+                        )}
+                      </div>
 
                       {!isHost && !allVotedSkip && skipVoteCount > 0 && (
                         <div
