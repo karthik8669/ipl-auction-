@@ -166,6 +166,7 @@ export default function AuctionPage() {
     show: boolean;
     isMe: boolean;
   }>({ show: false, isMe: false });
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   useEffect(() => {
     const check = () => {
@@ -399,7 +400,10 @@ export default function AuctionPage() {
     if (phase !== "bidding") return;
     const doSkip = async () => {
       const { update: fbUpdate } = await import("firebase/database");
-      await fbUpdate(ref(db), { [`rooms/${code}/auction/skipVotes`]: null });
+      await fbUpdate(ref(db), {
+        [`rooms/${code}/auction/skipVotes`]: null,
+        [`rooms/${code}/auction/withdrawals`]: null,
+      });
       finalizeUnsold();
     };
     doSkip();
@@ -415,6 +419,7 @@ export default function AuctionPage() {
     ) {
       update(ref(db), {
         [`rooms/${code}/auction/skipVotes`]: null,
+        [`rooms/${code}/auction/withdrawals`]: null,
       });
     }
 
@@ -432,8 +437,19 @@ export default function AuctionPage() {
   async function forceSkip() {
     if (!isHost || phase !== "bidding") return;
     const { update: fbUpdate } = await import("firebase/database");
-    await fbUpdate(ref(db), { [`rooms/${code}/auction/skipVotes`]: null });
+    await fbUpdate(ref(db), {
+      [`rooms/${code}/auction/skipVotes`]: null,
+      [`rooms/${code}/auction/withdrawals`]: null,
+    });
     finalizeUnsold();
+  }
+
+  async function endAuctionHandler() {
+    if (!isHost) return;
+    const { update: fbUpdate } = await import("firebase/database");
+    await fbUpdate(ref(db), {
+      [`rooms/${code}/meta/status`]: "finished",
+    });
   }
 
   useEffect(() => {
@@ -766,19 +782,19 @@ export default function AuctionPage() {
   }, [seconds, phase]);
 
   useEffect(() => {
-    const status = currentRoom?.meta?.status;
-    if (!status) return;
-    if (!user?.uid) return;
+    if (!currentRoom?.meta) return;
+    const status = currentRoom.meta.status;
+
     if (status === "finished") {
       audioManager.stopMusic();
-      const meState = currentRoom?.participants?.[user.uid];
-      if (meState?.hasLeft) {
+      const me = currentRoom?.participants?.[user?.uid!];
+      if (me?.hasLeft) {
         window.location.href = "/lobby";
       } else {
         window.location.href = `/room/${code}/playing11`;
       }
     }
-  }, [currentRoom?.meta?.status, currentRoom?.participants, user?.uid, code]);
+  }, [currentRoom?.meta?.status]);
 
   // Auth redirect — must be in useEffect, never in render body
   useEffect(() => {
@@ -827,6 +843,43 @@ export default function AuctionPage() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [auction, finalizeSold, finalizeUnsold, isHost, roomCode]);
+
+  // Auto-end when all teams have 20 players
+  useEffect(() => {
+    if (!isHost) return;
+    if (!currentRoom?.participants) return;
+    if (currentRoom?.meta?.status !== "auction") return;
+
+    const participants = currentRoom.participants;
+    const participantList = Object.values(participants);
+
+    // Need at least 1 participant
+    if (participantList.length === 0) return;
+
+    // Check if ALL participants have exactly 20 players
+    const allFull = participantList.every(
+      (p: any) => (p.squadSize ?? 0) >= 20,
+    );
+
+    if (!allFull) return;
+
+    // All teams full — end auction automatically
+    const autoEnd = async () => {
+      console.log("All squads full — auto ending auction");
+      // Post system message to chat
+      await postSystemMessage(
+        "🎉 All franchises have 20 players! Auction ending...",
+      );
+      const { update: fbUpdate } = await import("firebase/database");
+      await fbUpdate(ref(db), {
+        [`rooms/${code}/meta/status`]: "finished",
+        [`rooms/${code}/auction/phase`]: "finished",
+      });
+      // Status listener will redirect all players to playing11
+    };
+
+    autoEnd();
+  }, [currentRoom?.participants, isHost, currentRoom?.meta?.status, code, postSystemMessage]);
 
   if (authLoading || !user)
     return (
@@ -3270,7 +3323,7 @@ export default function AuctionPage() {
                     }}
                   >
                     <button
-                      onClick={handleEndAuction}
+                      onClick={() => setShowEndConfirm(true)}
                       style={{
                         flex: 1,
                         padding: isMobile ? "8px" : "10px",
@@ -4089,6 +4142,106 @@ export default function AuctionPage() {
                   </div>
                 ),
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* END AUCTION CONFIRMATION MODAL */}
+      {showEndConfirm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 500,
+            background: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              background: "#07182c",
+              border: "1px solid rgba(255,64,96,0.4)",
+              borderRadius: 20,
+              padding: "28px 24px",
+              maxWidth: 380,
+              width: "100%",
+              textAlign: "center",
+              animation: "fadeInUp 0.25s ease-out",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
+            }}
+          >
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🏁</div>
+
+            <div
+              style={{
+                fontFamily: "Teko, sans-serif",
+                fontSize: 28,
+                color: "#ff4060",
+                letterSpacing: 2,
+                marginBottom: 12,
+              }}
+            >
+              END AUCTION?
+            </div>
+
+            <div
+              style={{
+                color: "#ddeeff",
+                fontSize: 15,
+                lineHeight: 1.7,
+                marginBottom: 20,
+              }}
+            >
+              This will finalize all results and close the auction permanently.
+              <span style={{ display: "block", marginTop: 8, color: "#ff4060" }}>
+                This action cannot be undone.
+              </span>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button
+                onClick={endAuctionHandler}
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "rgba(255,64,96,0.15)",
+                  color: "#ff4060",
+                  fontFamily: "Teko, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 18,
+                  letterSpacing: 2,
+                  cursor: "pointer",
+                  boxShadow: "0 4px 16px rgba(255,64,96,0.2)",
+                }}
+              >
+                🏁 YES, END AUCTION
+              </button>
+
+              <button
+                onClick={() => setShowEndConfirm(false)}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255,255,255,0.05)",
+                  color: "#ddeeff",
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                }}
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
